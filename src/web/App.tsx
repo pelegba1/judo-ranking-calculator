@@ -1,11 +1,13 @@
-import { useDeferredValue, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { store, useData, type LiveState, type MetaFile, type ValidationFile } from './state/useData';
 import {
   AGES, GENDERS, addCompetitionToHash, appliesTo, buildProjection, competitionProgress, officialDateOf, pendingCompetitions,
-  resolveScenario, useScenario, withView, type ProjectionData, type Scenario, type ScenarioHash,
+  formatHash, resolveScenario, useScenario, withView, type ProjectionData, type Scenario, type ScenarioHash,
 } from './state/useScenario';
 import { parseJudoTvUrl, resolveCompetition } from './judotv';
 import { AGE_LABEL, GENDER_LABEL, S, formatDate } from './strings';
+import { CategoryTable } from './screens/CategoryTable';
+import { AthleteBreakdown } from './screens/AthleteBreakdown';
 import { WEIGHTS } from '../engine/rules/categories';
 import type { AgeGroup, AthleteResult, CategoryKey, CompetitionMeta, Person } from '../engine/types';
 import type { ProjectedEntry } from '../engine/projection';
@@ -20,7 +22,7 @@ const daysBefore = (iso: string, n: number) => new Date(Date.parse(iso.slice(0, 
 
 export function App() {
   const data = useData();
-  const { hash, setHash } = useScenario();
+  const { hash, setHash, pushHash } = useScenario();
   const { meta, validation } = data;
 
   if (data.status === 'loading') return <Shell><p className="state">{S.loading}</p></Shell>;
@@ -34,7 +36,7 @@ export function App() {
       </Shell>
     );
   }
-  return <Calculator meta={meta} validation={validation} hash={hash} setHash={setHash} />;
+  return <Calculator meta={meta} validation={validation} hash={hash} setHash={setHash} pushHash={pushHash} />;
 }
 
 function Shell({ children, header }: { children: ReactNode; header?: ReactNode }) {
@@ -50,8 +52,9 @@ function Shell({ children, header }: { children: ReactNode; header?: ReactNode }
   );
 }
 
-function Calculator({ meta, validation, hash, setHash }: {
+function Calculator({ meta, validation, hash, setHash, pushHash }: {
   meta: MetaFile; validation: ValidationFile; hash: ScenarioHash; setHash: (h: ScenarioHash) => void;
+  pushHash: (h: ScenarioHash) => void;
 }) {
   const data = useData();
   const { age, gender, weight } = hash;
@@ -127,7 +130,7 @@ function Calculator({ meta, validation, hash, setHash }: {
         ) : !projectionData ? (
           <p className="state">{S.ageLoading}</p>
         ) : (
-          <ProjectionTable data={projectionData} scenario={scenario} persons={data.persons} />
+          <ProjectionView data={projectionData} scenario={scenario} persons={data.persons} hash={hash} setHash={setHash} pushHash={pushHash} />
         )}
       </section>
       {v && v.checked > 0 && <p className="footnote">{S.validation(pct(v.matched, v.checked))} · {S.gaps(v.checked - v.matched)}</p>}
@@ -180,7 +183,7 @@ function ViewPicker({ hash, comps, setHash }: {
             <label key={w} className={`weight${w === hash.weight ? ' is-on' : ''}`}>
               <input
                 type="radio" name="weight" value={w} checked={w === hash.weight}
-                onChange={() => setHash({ ...hash, weight: w })}
+                onChange={() => setHash({ ...hash, weight: w, athlete: undefined })}
               />
               <bdi dir="ltr">{w}</bdi>
             </label>
@@ -380,16 +383,13 @@ function TargetDate({ meta, hash, scenario, setHash }: {
   );
 }
 
-const PAGE = 50;
-const fmtPoints = (n: number) => n.toLocaleString('he-IL', { maximumFractionDigits: 1 });
-const fmtDelta = (n: number) => (n > 0 ? `+${fmtPoints(n)}` : n < 0 ? `−${fmtPoints(-n)}` : '');
-
 /**
- * Minimal list of the projected category (Task 10 replaces it with the full table). The projection is computed
- * from a deferred copy of the inputs so checkboxes and the date input stay responsive.
+ * The projected category (table) or one athlete's breakdown, by the hash. The projection is computed from a
+ * deferred copy of the inputs so checkboxes and the date input stay responsive.
  */
-function ProjectionTable({ data, scenario, persons }: {
+function ProjectionView({ data, scenario, persons, hash, setHash, pushHash }: {
   data: ProjectionData; scenario: Scenario; persons: Map<number, Person> | undefined;
+  hash: ScenarioHash; setHash: (h: ScenarioHash) => void; pushHash: (h: ScenarioHash) => void;
 }) {
   const key = `${scenario.age}|${scenario.added.join(',')}|${scenario.targetDate}`;
   const input = useMemo(() => ({ data, scenario: { ...scenario, gender: 'm' as const, weight: '' }, key }),
@@ -398,39 +398,44 @@ function ProjectionTable({ data, scenario, persons }: {
   const deferred = useDeferredValue(input);
   const projection = useMemo(() => buildProjection(deferred.data, deferred.scenario), [deferred]);
   const stale = deferred !== input;
-  const [showAll, setShowAll] = useState(false);
   const cat = `${scenario.age}-${scenario.gender}${scenario.weight}` as CategoryKey;
-  useEffect(() => setShowAll(false), [cat]);
   const entries: ProjectedEntry[] = projection.get(cat) ?? [];
-  const shown = showAll ? entries : entries.slice(0, PAGE);
+  const added = useMemo(() => new Set(scenario.added), [scenario.added]);
+
+  // Opening an athlete scrolls to the card; going back restores where the table was.
+  const savedScroll = useRef(0);
+  const wrap = useRef<HTMLDivElement>(null);
+  const open = hash.athlete;
+  const wasOpen = useRef(false);
+  useLayoutEffect(() => {
+    if (open !== undefined && !wasOpen.current) wrap.current?.closest('.card')?.scrollIntoView();
+    else if (open === undefined && wasOpen.current) window.scrollTo(0, savedScroll.current);
+    wasOpen.current = open !== undefined;
+  }, [open]);
+
+  const openAthlete = (id: number) => {
+    savedScroll.current = window.scrollY;
+    pushHash({ ...hash, athlete: id });
+  };
 
   if (!entries.length) return <p className="muted">{stale ? S.computing : S.noEntries}</p>;
   return (
-    <div className={stale ? 'is-stale' : undefined} aria-busy={stale}>
-      <ol className="ranking">
-        {shown.map((e) => {
-          const p = persons?.get(e.idPerson);
-          const move = e.officialPlace === null ? null : e.officialPlace - e.projectedPlace;
-          return (
-            <li key={e.idPerson} className="rank-row">
-              <span className="rank-place">{e.projectedPlace}</span>
-              <span className="rank-move" title={S.officialWas(e.officialPlace)}>
-                {move === null ? <span className="up">●</span> : move > 0 ? <span className="up">▲{move}</span> : move < 0 ? <span className="down">▼{-move}</span> : ''}
-              </span>
-              <span className="rank-who">
-                <span className="rank-name">{p?.name ?? `#${e.idPerson}`}</span>
-                <span className="rank-country">{p?.country ?? ''}{!e.verified && <span className="tag tag-warn">{S.notVerified}</span>}</span>
-              </span>
-              <span className="rank-points">
-                <bdi dir="ltr">{fmtPoints(e.projectedPoints)}</bdi>
-                {e.delta !== 0 && <bdi dir="ltr" className={e.delta > 0 ? 'delta up' : 'delta down'}>{fmtDelta(e.delta)}</bdi>}
-              </span>
-            </li>
-          );
-        })}
-      </ol>
-      {!showAll && entries.length > PAGE && (
-        <button type="button" className="btn btn-block" onClick={() => setShowAll(true)}>{S.showAll(entries.length)}</button>
+    <div ref={wrap} className={stale ? 'is-stale' : undefined} aria-busy={stale}>
+      {open !== undefined ? (
+        <AthleteBreakdown
+          entry={entries.find((e) => e.idPerson === open)} idPerson={open} person={persons?.get(open)}
+          age={scenario.age} gender={scenario.gender} weight={scenario.weight} added={added}
+          // back to the table via the history entry we pushed; a link opened directly just drops the athlete
+          onBack={() => (history.state?.pushed ? history.back() : setHash({ ...hash, athlete: undefined }))}
+        />
+      ) : (
+        <>
+          <p className="muted small table-hint">{S.tableHint}{added.size > 0 && ` · ${S.highlightHint}`}</p>
+          <CategoryTable
+            entries={entries} persons={persons} added={added} onOpen={openAthlete}
+            hrefOf={(id) => formatHash({ ...hash, athlete: id })}
+          />
+        </>
       )}
     </div>
   );

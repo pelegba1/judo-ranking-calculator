@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   addCompetitionToHash, buildProjection, competitionProgress, defaultTargetDate, formatHash, mondayAfter, parseHash, pendingCompetitions,
-  resolveScenario, type ProjectionData, type ScenarioHash,
+  resolveScenario, withView, type ProjectionData, type ScenarioHash,
 } from '../../src/web/state/useScenario';
 import { derivePlacings } from '../../src/engine/placings';
 import { toCompetitionMeta } from '../../src/data/competition-loader';
@@ -222,5 +222,33 @@ describe('addCompetitionToHash', () => {
     expect(addCompetitionToHash(h, zagreb, comps, od)).toMatchObject({ outcome: 'already_added', next: h });
     const old = comp(3100, { dateTo: '2026-11-08' });
     expect(addCompetitionToHash(h, old, comps, od)).toEqual({ outcome: 'already_official', switched: false, next: null });
+  });
+});
+
+describe('athlete route in the hash', () => {
+  it('parses and formats #/sen/m/-60/athlete/20144?add=3159', () => {
+    const h = parseHash('#/sen/m/-60/athlete/20144?add=3159&date=2026-11-16');
+    expect(h).toEqual({ age: 'sen', gender: 'm', weight: '-60', added: [3159], date: '2026-11-16', athlete: 20144 });
+    expect(formatHash(h)).toBe('#/sen/m/-60/athlete/20144?add=3159&date=2026-11-16');
+  });
+  it('no athlete: unchanged format', () => {
+    expect(formatHash(parseHash('#/sen/m/-60'))).toBe('#/sen/m/-60');
+    expect(parseHash('#/sen/m/-60').athlete).toBeUndefined();
+  });
+  it('junk athlete ids fall back to the table', () => {
+    for (const bad of ['abc', '0', '-5', '1.5', '99999999999999999999', '']) {
+      expect(parseHash(`#/sen/m/-60/athlete/${bad}`).athlete).toBeUndefined();
+    }
+    expect(parseHash('#/sen/m/-60/foo/20144').athlete).toBeUndefined();
+  });
+  it('works with an encoded weight', () => {
+    const h = parseHash('#/sen/m/%2B100/athlete/7');
+    expect(h.weight).toBe('+100');
+    expect(h.athlete).toBe(7);
+    expect(formatHash(h)).toBe('#/sen/m/%2B100/athlete/7');
+  });
+  it('switching the view leaves the athlete', () => {
+    const h = parseHash('#/sen/m/-60/athlete/7');
+    expect(withView(h, { gender: 'f' }, new Map()).athlete).toBeUndefined();
   });
 });

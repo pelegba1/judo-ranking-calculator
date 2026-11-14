@@ -13,7 +13,11 @@ export const AGES: AgeGroup[] = ['sen', 'jun', 'cad'];
 export const GENDERS: Gender[] = ['m', 'f'];
 
 /** What the URL hash holds. `date` null = the default target date. */
-export interface ScenarioHash { age: AgeGroup; gender: Gender; weight: string; added: number[]; date: string | null }
+export interface ScenarioHash {
+  age: AgeGroup; gender: Gender; weight: string; added: number[]; date: string | null;
+  /** Athlete breakdown open (#/sen/m/-60/athlete/20144); absent = the category table. */
+  athlete?: number;
+}
 /** The scenario the projection runs on. */
 export interface Scenario { age: AgeGroup; gender: Gender; weight: string; added: number[]; targetDate: string }
 
@@ -82,14 +86,19 @@ export function parseHash(hash: string): ScenarioHash {
     if (id > 0 && Number.isSafeInteger(id) && !added.includes(id)) added.push(id);
   }
   const d = query.get('date') ?? '';
-  return { age, gender, weight, added, date: isIsoDate(d) ? d : null };
+  const out: ScenarioHash = { age, gender, weight, added, date: isIsoDate(d) ? d : null };
+  if (path[3] === 'athlete' && /^\d+$/.test(path[4] ?? '')) {
+    const id = Number(path[4]);
+    if (id > 0 && Number.isSafeInteger(id)) out.athlete = id;
+  }
+  return out;
 }
 
 export function formatHash(s: ScenarioHash): string {
   const params: string[] = [];
   if (s.added.length) params.push(`add=${s.added.join(',')}`);
   if (s.date) params.push(`date=${s.date}`);
-  return `#/${s.age}/${s.gender}/${encodeURIComponent(s.weight)}${params.length ? `?${params.join('&')}` : ''}`;
+  return `#/${s.age}/${s.gender}/${encodeURIComponent(s.weight)}${s.athlete ? `/athlete/${s.athlete}` : ''}${params.length ? `?${params.join('&')}` : ''}`;
 }
 
 // ---------- competitions ----------
@@ -116,7 +125,8 @@ export function withView(
     const c = comps.get(id);
     return !c || appliesTo(c, age);
   });
-  return { ...h, age, gender, weight, added };
+  const { athlete: _athlete, ...rest } = h;
+  return { ...rest, age, gender, weight, added };
 }
 
 export interface AddOutcome {
@@ -246,18 +256,32 @@ export function buildProjection(data: ProjectionData, scenario: Scenario): Map<C
 
 const readHash = () => parseHash(typeof location === 'undefined' ? '' : location.hash);
 
-/** The scenario hash state, synced with location.hash (replaceState, so toggles do not fill the history). */
-export function useScenario(): { hash: ScenarioHash; setHash: (next: ScenarioHash) => void } {
+/**
+ * The scenario hash state, synced with location.hash. `setHash` uses replaceState (toggles do not fill the
+ * history); `pushHash` adds a history entry (opening an athlete: the back button returns to the table).
+ */
+export function useScenario(): {
+  hash: ScenarioHash; setHash: (next: ScenarioHash) => void; pushHash: (next: ScenarioHash) => void;
+} {
   const [hash, setState] = useState<ScenarioHash>(readHash);
   useEffect(() => {
     const onChange = () => setState(readHash());
     window.addEventListener('hashchange', onChange);
-    return () => window.removeEventListener('hashchange', onChange);
+    window.addEventListener('popstate', onChange);
+    return () => {
+      window.removeEventListener('hashchange', onChange);
+      window.removeEventListener('popstate', onChange);
+    };
   }, []);
   useEffect(() => {
     const h = formatHash(hash);
     if (location.hash !== h) history.replaceState(null, '', h);
   }, [hash]);
   const setHash = useCallback((next: ScenarioHash) => setState(next), []);
-  return { hash, setHash };
+  const pushHash = useCallback((next: ScenarioHash) => {
+    const h = formatHash(next);
+    if (location.hash !== h) history.pushState({ pushed: true }, '', h);
+    setState(next);
+  }, []);
+  return { hash, setHash, pushHash };
 }

@@ -4,8 +4,8 @@ import type { AgeGroup, Gender } from '../engine/types';
 export const AGE_LABEL: Record<AgeGroup, string> = { sen: 'בוגרים', jun: "ג'וניורים", cad: 'קדטים' };
 export const GENDER_LABEL: Record<Gender, string> = { m: 'גברים', f: 'נשים' };
 
-/** 2026-11-16 -> 16.11.2026 */
-export const formatDate = (d: string) => (d && d.length >= 10 ? `${d.slice(8, 10)}.${d.slice(5, 7)}.${d.slice(0, 4)}` : d);
+import { formatDate } from './format';
+export { formatDate };
 
 export const S = {
   appTitle: "מחשבון דירוג ג'ודו",
@@ -68,4 +68,39 @@ export const S = {
   showAll: (n: number) => `הצג את כל ${n.toLocaleString('he-IL')}`,
   officialWas: (p: number | null) => (p === null ? 'חדש בדירוג' : `רשמי: ${p}`),
   notVerified: 'לא מאומת',
+  colMove: 'שינוי',
+  colCountry: 'מדינה',
+  tableHint: 'לחצו על ספורטאי לפירוט הנקודות',
+  highlightHint: 'מסומנים: ספורטאים שהתחרויות שנוספו משפיעות עליהם',
+  openAthlete: (name: string) => `פירוט הנקודות של ${name}`,
+  pointsBefore: (n: string) => `רשמי: ${n}`,
+
+  back: 'חזרה לטבלה',
+  athleteUnknown: (id: number) => `ספורטאי ${id}`,
+  athleteNotFound: 'הספורטאי לא נמצא בקטגוריה הזו.',
+  projectedPlace: 'מקום מחושב',
+  projectedPoints: 'נקודות מחושבות',
+  officialPoints: 'נקודות רשמיות',
+  officialPlaceLabel: 'מקום רשמי',
+  deltaLabel: 'הפרש',
+  notVerifiedWhy: 'החישוב שלנו לא שחזר במדויק את הנקודות הרשמיות של הספורטאי, לכן ההפרש מחושב ומתווסף לנקודות הרשמיות.',
+  engineTotal: (n: string) => `סכום החישוב שלנו: ${n}`,
+  noBreakdown: 'אין פירוט — החישוב לא שחזר את התוצאות של הספורטאי',
+  secCurrent: '12 חודשים אחרונים (100%)',
+  secPrevious: '13–24 חודשים (50%)',
+  secExpired: 'פגו',
+  grpBest: '3 הטובות (גרנד פרי / קונטיננטל קאפ)',
+  grpContinental: 'אליפות יבשת',
+  grpWorld: 'אליפות עולם',
+  grpOther: 'אחר',
+  grpNotCounted: 'לא נספרו',
+  counted: 'נספר',
+  notCounted: 'לא נספר',
+  isNew: 'חדש',
+  fromBase: (base: string) => `מתוך ${base}`,
+  /** Prefixes: the date follows, in a <bdi dir="ltr"> so the hyphen stays on the Hebrew side. */
+  dropsTo50: 'יורד ל-50% ב-',
+  expiresOn: 'פג ב-',
+  noResultsInSection: 'אין תוצאות',
+  placeShort: 'מקום',
 };
