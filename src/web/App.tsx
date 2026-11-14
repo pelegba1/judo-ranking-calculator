@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { store, useData, type LiveState, type MetaFile, type ValidationFile } from './state/useData';
 import {
   AGES, GENDERS, addCompetitionToHash, appliesTo, buildProjection, competitionProgress, officialDateOf, pendingCompetitions,
@@ -413,10 +413,12 @@ function ProjectionView({ data, scenario, persons, hash, setHash, pushHash }: {
     wasOpen.current = open !== undefined;
   }, [open]);
 
-  const openAthlete = (id: number) => {
+  const hashRef = useRef(hash);
+  hashRef.current = hash;
+  const openAthlete = useCallback((id: number) => {
     savedScroll.current = window.scrollY;
-    pushHash({ ...hash, athlete: id });
-  };
+    pushHash({ ...hashRef.current, athlete: id });
+  }, [pushHash]);
 
   if (!entries.length) return <p className="muted">{stale ? S.computing : S.noEntries}</p>;
   return (

@@ -1,10 +1,10 @@
 // Every Hebrew UI string in one place.
 import type { AgeGroup, Gender } from '../engine/types';
+import { formatDate } from './format';
 
 export const AGE_LABEL: Record<AgeGroup, string> = { sen: 'בוגרים', jun: "ג'וניורים", cad: 'קדטים' };
 export const GENDER_LABEL: Record<Gender, string> = { m: 'גברים', f: 'נשים' };
 
-import { formatDate } from './format';
 export { formatDate };
 
 export const S = {
@@ -64,16 +64,12 @@ export const S = {
   colPlace: 'מקום',
   colName: 'שם',
   colPoints: 'נקודות',
-  colDelta: 'שינוי',
-  showAll: (n: number) => `הצג את כל ${n.toLocaleString('he-IL')}`,
   officialWas: (p: number | null) => (p === null ? 'חדש בדירוג' : `רשמי: ${p}`),
   notVerified: 'לא מאומת',
   colMove: 'שינוי',
   colCountry: 'מדינה',
   tableHint: 'לחצו על ספורטאי לפירוט הנקודות',
   highlightHint: 'מסומנים: ספורטאים שהתחרויות שנוספו משפיעות עליהם',
-  openAthlete: (name: string) => `פירוט הנקודות של ${name}`,
-  pointsBefore: (n: string) => `רשמי: ${n}`,
 
   back: 'חזרה לטבלה',
   athleteUnknown: (id: number) => `ספורטאי ${id}`,
@@ -81,7 +77,6 @@ export const S = {
   projectedPlace: 'מקום מחושב',
   projectedPoints: 'נקודות מחושבות',
   officialPoints: 'נקודות רשמיות',
-  officialPlaceLabel: 'מקום רשמי',
   deltaLabel: 'הפרש',
   notVerifiedWhy: 'החישוב שלנו לא שחזר במדויק את הנקודות הרשמיות של הספורטאי, לכן ההפרש מחושב ומתווסף לנקודות הרשמיות.',
   engineTotal: (n: string) => `סכום החישוב שלנו: ${n}`,

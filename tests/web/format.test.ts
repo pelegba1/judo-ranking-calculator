@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatDate, formatDelta, formatMovement, formatPoints, placeLabel } from '../../src/web/format';
+import { formatDate, formatDelta, formatMovement, formatPoints, isAffected, placeLabel } from '../../src/web/format';
 
 describe('formatMovement', () => {
   it('moved up', () => expect(formatMovement(5, 2)).toEqual({ label: '▲3', dir: 'up' }));
@@ -36,7 +36,6 @@ describe('formatPoints / formatDelta', () => {
   });
 });
 
-import { isAffected } from '../../src/web/format';
 describe('isAffected', () => {
   const eng = (ids: number[]) => ({ results: ids.map((competitionId) => ({ result: { competitionId } })) });
   it('delta or a result from an added competition', () => {
