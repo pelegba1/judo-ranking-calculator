@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
-  buildProjection, competitionProgress, defaultTargetDate, formatHash, mondayAfter, parseHash, pendingCompetitions,
+  addCompetitionToHash, buildProjection, competitionProgress, defaultTargetDate, formatHash, mondayAfter, parseHash, pendingCompetitions,
   resolveScenario, type ProjectionData, type ScenarioHash,
 } from '../../src/web/state/useScenario';
 import { derivePlacings } from '../../src/engine/placings';
@@ -191,5 +191,36 @@ describe('buildProjection (fixtures)', () => {
     const base = buildProjection(d, scenario([], '2026-11-16'));
     const odd = buildProjection(d, scenario([424242], '2026-11-16'));
     expect(changed(base, odd).size).toBe(0);
+  });
+});
+
+describe('addCompetitionToHash', () => {
+  const od = dates('2026-11-09');
+  const zagreb = comp(3159, { dateTo: '2026-11-15' });
+  const comps = new Map<number, CompetitionMeta>([[3159, zagreb], [3169, comp(3169, { dateTo: '2026-11-15' })]]);
+
+  it('applies to the hash it is given: a newer weight, date and toggles are kept', () => {
+    // the user changed the view while the competition was being looked up
+    const latest: ScenarioHash = { age: 'sen', gender: 'f', weight: '-57', added: [3169], date: '2026-12-07' };
+    expect(addCompetitionToHash(latest, zagreb, comps, od)).toEqual({
+      outcome: 'added', switched: false,
+      next: { age: 'sen', gender: 'f', weight: '-57', added: [3169, 3159], date: '2026-12-07' },
+    });
+  });
+
+  it('another age group: switches the view and keeps the competitions that still apply', () => {
+    const cad = comp(3317, { age: 'cad', dateTo: '2026-11-14' });
+    const h: ScenarioHash = { age: 'sen', gender: 'f', weight: '-57', added: [3159], date: null };
+    expect(addCompetitionToHash(h, cad, new Map([...comps, [3317, cad]]), od)).toEqual({
+      outcome: 'added', switched: true,
+      next: { age: 'cad', gender: 'f', weight: '-57', added: [3317], date: null },
+    });
+  });
+
+  it('already added / already in the official list', () => {
+    const h: ScenarioHash = { age: 'sen', gender: 'm', weight: '-60', added: [3159], date: null };
+    expect(addCompetitionToHash(h, zagreb, comps, od)).toMatchObject({ outcome: 'already_added', next: h });
+    const old = comp(3100, { dateTo: '2026-11-08' });
+    expect(addCompetitionToHash(h, old, comps, od)).toEqual({ outcome: 'already_official', switched: false, next: null });
   });
 });

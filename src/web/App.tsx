@@ -1,7 +1,7 @@
-import { useDeferredValue, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { store, useData, type LiveState, type MetaFile, type ValidationFile } from './state/useData';
 import {
-  AGES, GENDERS, appliesTo, buildProjection, competitionProgress, officialDateOf, pendingCompetitions,
+  AGES, GENDERS, addCompetitionToHash, appliesTo, buildProjection, competitionProgress, officialDateOf, pendingCompetitions,
   resolveScenario, useScenario, withView, type ProjectionData, type Scenario, type ScenarioHash,
 } from './state/useScenario';
 import { parseJudoTvUrl, resolveCompetition } from './judotv';
@@ -215,6 +215,12 @@ function AddCompetition({ meta, comps, hash, setHash }: {
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
+  const hashRef = useRef(hash);
+  const compsRef = useRef(comps);
+  useEffect(() => {
+    hashRef.current = hash;
+    compsRef.current = comps;
+  }, [hash, comps]);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -232,27 +238,24 @@ function AddCompetition({ meta, comps, hash, setHash }: {
       return;
     }
     const c = r.meta;
-    if (!comps.has(c.id)) store.addExtra(c);
-    const all = new Map(comps).set(c.id, comps.get(c.id) ?? c);
-    const switched = !appliesTo(c, hash.age);
-    let next = switched ? withView(hash, { age: c.age }, all) : hash;
-    const od = meta.officialDates;
-    if (c.dateTo < od[`${next.age}-m`] && c.dateTo < od[`${next.age}-f`]) {
+    // The lookup can take seconds: apply the competition to the latest hash and competitions, not the ones
+    // captured when the form was submitted, so view/toggle/date changes made meanwhile are kept.
+    const latestComps = compsRef.current;
+    if (!latestComps.has(c.id)) store.addExtra(c);
+    const add = addCompetitionToHash(hashRef.current, c, latestComps, meta.officialDates);
+    if (add.outcome === 'already_official') {
       setNotice({ kind: 'info', text: S.alreadyOfficial(c.name) });
       return;
     }
     const messages: string[] = [];
-    if (switched) messages.push(S.switchedAge(c.name, c.age));
-    if (next.added.includes(c.id)) messages.push(S.alreadyAdded(c.name));
-    else {
-      next = { ...next, added: [...next.added, c.id] };
-      if (!switched) messages.push(S.addedOk(c.name));
-    }
-    setHash(next);
+    if (add.switched) messages.push(S.switchedAge(c.name, c.age));
+    if (add.outcome === 'already_added') messages.push(S.alreadyAdded(c.name));
+    else if (!add.switched) messages.push(S.addedOk(c.name));
+    if (add.next) setHash(add.next);
     setInput('');
     setNotice({ kind: 'info', text: messages.join(' · ') });
     // Always fetch fresh (results may be partial); the nightly data is used meanwhile and if this fails.
-    const known = comps.get(c.id);
+    const known = latestComps.get(c.id);
     const s = await store.loadLive(known ?? c);
     if (s.status === 'failed') {
       setNotice(known?.hasResults

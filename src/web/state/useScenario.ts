@@ -119,6 +119,32 @@ export function withView(
   return { ...h, age, gender, weight, added };
 }
 
+export interface AddOutcome {
+  outcome: 'added' | 'already_added' | 'already_official';
+  /** The view was switched to the competition's own age group. */
+  switched: boolean;
+  /** The hash to set; null when nothing changes. */
+  next: ScenarioHash | null;
+}
+
+/**
+ * Add a competition to `h` (pass the latest hash: the lookup before this may have taken seconds). A competition
+ * that gives no points in the view's age group switches the view to its own age group; one that every list of
+ * that age group already includes is not added.
+ */
+export function addCompetitionToHash(
+  h: ScenarioHash, c: CompetitionMeta, comps: Map<number, CompetitionMeta>, officialDates: Record<AgeGender, string>,
+): AddOutcome {
+  const all = comps.has(c.id) ? comps : new Map(comps).set(c.id, c);
+  const switched = !appliesTo(c, h.age);
+  const view = switched ? withView(h, { age: c.age }, all) : h;
+  if (c.dateTo < officialDates[`${view.age}-m`] && c.dateTo < officialDates[`${view.age}-f`]) {
+    return { outcome: 'already_official', switched: false, next: null };
+  }
+  if (view.added.includes(c.id)) return { outcome: 'already_added', switched, next: view };
+  return { outcome: 'added', switched, next: { ...view, added: [...view.added, c.id] } };
+}
+
 export interface PendingMeta {
   officialDates: Record<AgeGender, string>;
   competitions: (CompetitionMeta & { hasResults: boolean })[];
