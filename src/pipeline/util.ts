@@ -66,3 +66,9 @@ export async function readJson<T>(path: string): Promise<T | null> {
     throw e;
   }
 }
+
+/** The Monday on or before `date`. */
+export function mondayOnOrBefore(date: string): string {
+  const dow = (new Date(ms(date)).getUTCDay() + 6) % 7; // Mon=0
+  return addDays(date, -dow);
+}

@@ -5,7 +5,7 @@ import { AGE_GENDERS, officialCategory, splitAgeGender, type AgeGender } from '.
 import { WEIGHTS } from '../engine/rules/categories';
 import { mondayOfIsoWeek } from '../engine/dates';
 import type { OfficialEntry } from '../engine/projection';
-import type { CategoryKey } from '../engine/types';
+import type { AgeGroup, CategoryKey } from '../engine/types';
 
 /** Category keys in display order: sen m, sen f, jun m, jun f, cad m, cad f; weights light to heavy. */
 export const CATEGORY_ORDER: CategoryKey[] = AGE_GENDERS.flatMap((ag) => {
@@ -81,4 +81,36 @@ export async function findOfficialDates(
     if (sorted.length) out[ag] = sorted[sorted.length - 1];
   }
   return out;
+}
+
+/** A fresh official list shorter than this share of the previous one is treated as a broken answer. */
+export const MIN_OFFICIAL_KEPT = 0.9;
+
+/**
+ * Per age group: the fresh official entries, or the previous official-<age>.json when the fresh list of either
+ * gender is empty or shrank by more than 10% against it (an API hiccup must not wipe the published list). Each
+ * fallback and each empty list without a previous file is reported in `warnings`.
+ */
+export function guardOfficial(
+  fresh: OfficialEntry[], previous: Partial<Record<AgeGroup, OfficialEntry[]>>,
+): { official: OfficialEntry[]; warnings: string[] } {
+  const warnings: string[] = [];
+  const official: OfficialEntry[] = [];
+  for (const age of ['sen', 'jun', 'cad'] as AgeGroup[]) {
+    const mine = fresh.filter((o) => o.category.startsWith(`${age}-`));
+    const prev = previous[age] ?? [];
+    let keep = false;
+    for (const ag of AGE_GENDERS.filter((x) => x.startsWith(`${age}-`))) {
+      const n = mine.filter((o) => o.category.startsWith(ag)).length;
+      const p = prev.filter((o) => o.category.startsWith(ag)).length;
+      if (p > 0 && n < MIN_OFFICIAL_KEPT * p) {
+        keep = true;
+        warnings.push(`${ag}: ${n} rows in ranking.get_list, previous ${p}: keeping the previous official-${age}.json`);
+      } else if (n === 0) {
+        warnings.push(`${ag}: 0 rows in ranking.get_list and no previous list`);
+      }
+    }
+    official.push(...(keep ? prev : mine));
+  }
+  return { official, warnings };
 }

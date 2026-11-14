@@ -27,7 +27,7 @@ const AGE_OF_ID: Record<string, string> = { 1: 'sen', 2: 'sen', 7: 'jun', 8: 'ju
 interface FakeApi {
   calls: { action: string; id?: number }[];
   /** Return a Response to override the fixture answer for one call. */
-  override?: (action: string, id: number | undefined) => Response | undefined;
+  override?: (action: string, id: number | undefined, params: URLSearchParams) => Response | undefined;
   infoTs: Record<number, string>;
 }
 
@@ -41,7 +41,7 @@ function installFakeApi(api: FakeApi) {
     const action = p('action') ?? '';
     const id = p('id_competition') ? Number(p('id_competition')) : undefined;
     api.calls.push({ action, id });
-    const o = api.override?.(action, id);
+    const o = api.override?.(action, id, url.searchParams);
     if (o) return o;
     const info = (cid: number) => ({ ...fixture(cid, 'info'), updated_at_ts: api.infoTs[cid] ?? fixture(cid, 'info').updated_at_ts });
     switch (action) {
@@ -60,8 +60,10 @@ function installFakeApi(api: FakeApi) {
         return json(fixture(id!, 'competitors'));
       case 'competition.results':
         return json(fixture(id!, 'results'));
-      case 'ranking.get_list':
-        return json(ranking);
+      case 'ranking.get_list': {
+        const feed = p('id_age') ? ranking.feed.filter((r) => r.id_age === p('id_age')) : ranking.feed;
+        return json({ feed, meta: { pagination: { total: feed.length } } });
+      }
       case 'competitor.wrl_history': {
         const rows = ranking.feed.filter((r) => r.id_person === p('id_person'));
         return json(rows.map((r) => {
@@ -137,6 +139,7 @@ describe('runPipeline on fixtures', () => {
     expect(persons['20144']).toEqual({ id: 20144, name: 'AGHAYEV Balabay', country: 'AZE', continent: 'Europe' });
 
     const validation = read(join(d.outDir, 'validation.json'));
+    expect(Array.isArray(validation.warnings)).toBe(true);
     for (const age of ['sen', 'jun', 'cad']) {
       const v = validation[age];
       expect(v.checked).toBeGreaterThan(100);
@@ -221,6 +224,43 @@ describe('runPipeline on fixtures', () => {
     expect(s2.failed).toEqual([3159]);
     expect(read(join(d2.outDir, 'results-sen.json'))['3159']).toBeUndefined();
     expect(read(join(d2.outDir, 'meta.json')).competitions.find((c: { id: number }) => c.id === 3159).hasResults).toBe(false);
+  });
+
+  it('keeps the previous official file and warns when a list comes back empty or truncated', async () => {
+    const d = tempDirs();
+    installFakeApi(newApi());
+    await runPipeline(opts(d));
+    const before = { sen: readFileSync(join(d.outDir, 'official-sen.json'), 'utf8'), cad: readFileSync(join(d.outDir, 'official-cad.json'), 'utf8') };
+
+    installFakeApi(newApi({
+      override: (action, _id, params) => {
+        if (action !== 'ranking.get_list') return undefined;
+        if (params.get('params[id_age]') === '9') return json({ feed: [], meta: { pagination: { total: 0 } } });
+        if (params.get('params[id_age]') === '1') return json({ feed: ranking.feed.slice(0, 3), meta: { pagination: { total: 4149 } } });
+        return undefined;
+      },
+    }));
+    const s = await runPipeline(opts(d));
+    expect(readFileSync(join(d.outDir, 'official-cad.json'), 'utf8')).toBe(before.cad);
+    expect(readFileSync(join(d.outDir, 'official-sen.json'), 'utf8')).toBe(before.sen);
+    const warnings: string[] = read(join(d.outDir, 'validation.json')).warnings;
+    expect(warnings).toEqual(s.warnings);
+    expect(warnings.some((w) => /^cad-m: 0 rows .*keeping the previous official-cad/.test(w))).toBe(true);
+    expect(warnings.some((w) => /^sen-m: ranking.get_list failed: .*truncated/.test(w))).toBe(true);
+    expect(read(join(d.outDir, 'validation.json')).sen.checked).toBeGreaterThan(100); // still validated against the kept list
+  });
+
+  it('never publishes an official date earlier than the previous one', async () => {
+    const d = tempDirs();
+    installFakeApi(newApi());
+    await runPipeline(opts(d));
+    const metaPath = join(d.outDir, 'meta.json');
+    const meta = read(metaPath);
+    expect(meta.officialDates['sen-m']).toBe('2026-11-02'); // wrl_history says week 45
+    writeFileSync(metaPath, JSON.stringify({ ...meta, officialDates: { ...meta.officialDates, 'sen-m': '2026-11-09' } }));
+    installFakeApi(newApi());
+    await runPipeline(opts(d));
+    expect(read(metaPath).officialDates['sen-m']).toBe('2026-11-09');
   });
 
   it('writes byte-identical public data on an unchanged rerun (apart from generatedAt)', async () => {

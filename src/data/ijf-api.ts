@@ -186,9 +186,25 @@ export function getResults(id: number): Promise<RawResultsResponse> {
   return apiGet('competition.results', { id_competition: id });
 }
 
-export async function getOfficialRanking(): Promise<RawRankingRow[]> {
-  const r = await apiGet<{ feed: RawRankingRow[] }>('ranking.get_list', { limit: 20000 });
-  return r.feed;
+const RANKING_LIMIT = 20000;
+
+/**
+ * The current official ranking, all lists or one id_age (1/2 senior m/f, 7/8 junior, 9/10 cadet). Throws when the
+ * answer may be truncated: fewer rows than meta.pagination.total, or as many rows as the limit asked for.
+ */
+export async function getOfficialRanking(idAge?: number): Promise<RawRankingRow[]> {
+  const r = await apiGet<{ feed?: RawRankingRow[]; meta?: { pagination?: { total?: number | string } } }>(
+    'ranking.get_list', idAge ? { id_age: idAge, limit: RANKING_LIMIT } : { limit: RANKING_LIMIT },
+  );
+  const feed = r.feed ?? [];
+  const total = Number(r.meta?.pagination?.total);
+  if (feed.length >= RANKING_LIMIT || (Number.isFinite(total) && total > feed.length)) {
+    throw new IjfApiError(
+      `ranking.get_list${idAge ? ` id_age ${idAge}` : ''}: ${feed.length} rows of ${Number.isFinite(total) ? total : '?'}, truncated`,
+      'ranking.get_list',
+    );
+  }
+  return feed;
 }
 
 export function getWrlCurrent(idPerson: number): Promise<RawWrlCurrent[]> {

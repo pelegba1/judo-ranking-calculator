@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { apiGet, getCompetitionInfo, getContests, IjfApiError } from '../../src/data/ijf-api';
+import { apiGet, getCompetitionInfo, getContests, getOfficialRanking, IjfApiError } from '../../src/data/ijf-api';
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -89,5 +89,26 @@ describe('getContests', () => {
     expect(await getContests(1)).toHaveLength(1);
     vi.stubGlobal('fetch', async () => json([{ id_fight: '1' }, { id_fight: '2' }]));
     expect(await getContests(1)).toHaveLength(2);
+  });
+});
+
+describe('getOfficialRanking', () => {
+  const row = (i: number) => ({ id_person: String(i), id_age: '9', id_weight: '60', place: String(i), sum_points: '1' });
+
+  it('asks for one id_age and returns the feed when it is complete', async () => {
+    const f = vi.fn(async () => json({ feed: [row(1), row(2)], meta: { pagination: { total: 2 } } }));
+    vi.stubGlobal('fetch', f);
+    expect(await getOfficialRanking(9)).toHaveLength(2);
+    expect(decodeURIComponent(String((f.mock.calls[0] as unknown[])[0]))).toContain('params[id_age]=9');
+  });
+
+  it('throws when the feed is shorter than the reported total (truncated)', async () => {
+    vi.stubGlobal('fetch', async () => json({ feed: [row(1)], meta: { pagination: { total: 5 } } }));
+    await expect(getOfficialRanking(9)).rejects.toThrow(/truncated/);
+  });
+
+  it('throws when the feed fills the requested limit (possibly truncated)', async () => {
+    vi.stubGlobal('fetch', async () => json({ feed: Array.from({ length: 20000 }, (_, i) => row(i)) }));
+    await expect(getOfficialRanking(9)).rejects.toThrow(/truncated/);
   });
 });

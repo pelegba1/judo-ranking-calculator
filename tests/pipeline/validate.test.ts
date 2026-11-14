@@ -20,22 +20,54 @@ const off = (idPerson: number, points: number, place: number): OfficialEntry => 
 
 describe('chooseOfficialDates', () => {
   const engine = (official: OfficialEntry[]) => engineAtDates(results, comps, officialPlaceLookup(official));
+  const choose = (official: OfficialEntry[], today = '2026-11-14', history = base, previous: Partial<Record<AgeGender, string>> = {}) =>
+    chooseOfficialDates({ history, previous, today, official, engine: engine(official) });
+  const senM = (c: ReturnType<typeof choose>) => ({ date: c.dates['sen-m'], warnings: c.warnings.filter((w) => w.startsWith('sen-m')) });
 
   it('moves to a later Monday when the list already includes a later competition', () => {
-    const official = [off(10, 1400, 1), off(11, 490, 2)];
-    expect(chooseOfficialDates(base, '2026-11-14', official, engine(official))['sen-m']).toBe('2026-11-09');
+    expect(senM(choose([off(10, 1400, 1), off(11, 490, 2)]))).toEqual({ date: '2026-11-09', warnings: [] });
   });
 
   it('keeps the history date when the later competition is not in the list', () => {
-    const official = [off(10, 700, 1), off(11, 490, 2)];
-    expect(chooseOfficialDates(base, '2026-11-14', official, engine(official))['sen-m']).toBe('2026-11-02');
+    expect(senM(choose([off(10, 700, 1), off(11, 490, 2)])).date).toBe('2026-11-02');
   });
 
   it('keeps the earlier Monday on a tie and never goes past today', () => {
-    const official = [off(11, 490, 1)]; // same total on both Mondays
-    const e = engine(official);
-    expect(chooseOfficialDates(base, '2026-11-14', official, e)['sen-m']).toBe('2026-11-02');
-    expect(chooseOfficialDates(base, '2026-11-08', [off(10, 1400, 1)], engine([off(10, 1400, 1)]))['sen-m']).toBe('2026-11-02');
+    expect(senM(choose([off(11, 490, 1)])).date).toBe('2026-11-02');
+    expect(senM(choose([off(10, 1400, 1)], '2026-11-08')).date).toBe('2026-11-02');
+  });
+
+  it('never goes back before the previously published date', () => {
+    // the list matches 11-02 better (B not included), but 11-09 was already published: stay there
+    const c = senM(choose([off(10, 700, 1), off(11, 490, 2)], '2026-11-14', base, { 'sen-m': '2026-11-09' }));
+    expect(c.date).toBe('2026-11-09');
+  });
+
+  it('keeps the previous date and warns when the best match is below 90%', () => {
+    const bad = [off(10, 5, 1), off(11, 5, 2)]; // nothing matches on any Monday
+    expect(senM(choose(bad, '2026-11-14', base, { 'sen-m': '2026-11-02' }))).toEqual({
+      date: '2026-11-02', warnings: [expect.stringMatching(/sen-m: best match 0.0% .* below 90%.* keeping 2026-11-02/)],
+    });
+    // nothing published yet: the history date, still warned
+    const first = senM(choose(bad));
+    expect(first.date).toBe('2026-11-02');
+    expect(first.warnings).toHaveLength(1);
+  });
+
+  it('clamps a history date after today and snaps a non-Monday to its Monday, with a warning', () => {
+    const official = [off(10, 1400, 1), off(11, 490, 2)];
+    const future = senM(choose(official, '2026-11-14', { ...base, 'sen-m': '2026-11-23' }));
+    expect(future.date).toBe('2026-11-09');
+    expect(future.warnings).toEqual([expect.stringMatching(/sen-m: .*2026-11-23.* after today/)]);
+    const tuesday = senM(choose(official, '2026-11-14', { ...base, 'sen-m': '2026-11-03' }));
+    expect(tuesday.date).toBe('2026-11-09');
+    expect(tuesday.warnings).toEqual([expect.stringMatching(/sen-m: .*2026-11-03.* not a Monday/)]);
+  });
+
+  it('warns when an age-gender has no official rows and keeps the previous date', () => {
+    const c = choose([off(10, 1400, 1)], '2026-11-14', base, { 'cad-f': '2026-10-26' });
+    expect(c.dates['cad-f']).toBe('2026-10-26');
+    expect(c.warnings.some((w) => /^cad-f: no official rows/.test(w))).toBe(true);
   });
 });
 

@@ -4,13 +4,15 @@ import type { OfficialEntry } from '../engine/projection';
 import type { OfficialPlace } from '../engine/rules/domestic';
 import type { AgeGroup, AthleteResult, CategoryKey, CompetitionMeta } from '../engine/types';
 import { AGE_GENDERS, splitAgeGender, type AgeGender } from '../data/ids';
-import { addDays } from './util';
+import { addDays, mondayOnOrBefore } from './util';
 
 export const MAX_MISMATCHES = 200;
 
 export interface Mismatch { idPerson: number; category: CategoryKey; official: number; engine: number }
 export interface AgeValidation { checked: number; matched: number; mismatches: Mismatch[] }
 export type Validation = Record<AgeGroup, AgeValidation>;
+/** validation.json: per-age results plus the run's warnings (lists kept from the previous run, distrusted dates). */
+export type ValidationFile = Validation & { warnings: string[] };
 
 const AGES: AgeGroup[] = ['sen', 'jun', 'cad'];
 
@@ -63,31 +65,74 @@ function compare(rows: OfficialEntry[], totals: Map<CategoryKey, Map<number, num
   return { checked: rows.length, matched, mismatches };
 }
 
+/** Below this share of matched official totals the engine is not trusted to date the official list. */
+export const MIN_DATE_MATCH_RATE = 0.9;
+
+export interface DateChoiceInput {
+  /** wrl_history (or breakdown page) date per age-gender: a first estimate. */
+  history: Record<AgeGender, string>;
+  /** Dates published by the previous run (meta.json): the official date never goes back before them. */
+  previous: Partial<Record<AgeGender, string>>;
+  today: string;
+  official: OfficialEntry[];
+  engine: EngineAtDate;
+  log?: (msg: string) => void;
+}
+export interface DateChoice { dates: Record<AgeGender, string>; warnings: string[] }
+
 /**
  * ranking.get_list can be newer than wrl_history and the breakdown pages (seen 2026-11-14: history and pages said
  * 2026-11-02 while the list already held the results of 2026-11-07/08 events, i.e. the 2026-11-09 list). So for each
- * age-gender the official date is the Monday, from `base` (the wrl_history date) up to `today`, on which the engine
- * matches the most official totals; a tie keeps the earlier Monday.
+ * age-gender the official date is the Monday, from max(history date, previously published date) up to today, on
+ * which the engine matches the most official totals; a tie keeps the earlier Monday. The date never moves back
+ * (an earlier date would make the site count the events in between twice). The history date is snapped to its
+ * Monday and clamped to today. If the best match is below MIN_DATE_MATCH_RATE (or there are no official rows), the
+ * previous date is kept (history date on a first run) and a warning is returned.
  */
-export function chooseOfficialDates(
-  base: Record<AgeGender, string>, today: string, official: OfficialEntry[], engine: EngineAtDate,
-  log: (msg: string) => void = () => {},
-): Record<AgeGender, string> {
-  const out = {} as Record<AgeGender, string>;
+export function chooseOfficialDates(input: DateChoiceInput): DateChoice {
+  const { history, previous, today, official, engine } = input;
+  const log = input.log ?? (() => {});
+  const lastMonday = mondayOnOrBefore(today);
+  const dates = {} as Record<AgeGender, string>;
+  const warnings: string[] = [];
   for (const ag of AGE_GENDERS) {
     const { age } = splitAgeGender(ag);
+    let h = history[ag];
+    if (mondayOnOrBefore(h) !== h) {
+      warnings.push(`${ag}: history date ${h} is not a Monday; using ${mondayOnOrBefore(h)}`);
+      h = mondayOnOrBefore(h);
+    }
+    if (h > lastMonday) {
+      warnings.push(`${ag}: history date ${h} is after today (${today}); using ${lastMonday}`);
+      h = lastMonday;
+    }
+    const prev = previous[ag] && previous[ag]! <= lastMonday ? mondayOnOrBefore(previous[ag]!) : undefined;
+    const start = prev && prev > h ? prev : h;
     const rows = rowsOf(official, ag);
-    let best = { date: base[ag], matched: -1 };
+    if (!rows.length) {
+      dates[ag] = prev ?? start;
+      warnings.push(`${ag}: no official rows; keeping ${dates[ag]}`);
+      continue;
+    }
+    let best = { date: start, matched: -1 };
     const tried: string[] = [];
-    for (let d = base[ag]; d <= today; d = addDays(d, 7)) {
+    for (let d = start; d <= lastMonday; d = addDays(d, 7)) {
       const { matched } = compare(rows, engine(age, d));
       tried.push(`${d}: ${matched}/${rows.length}`);
       if (matched > best.matched) best = { date: d, matched };
     }
-    if (tried.length > 1) log(`official date ${ag}: ${tried.join(', ')} -> ${best.date}`);
-    out[ag] = best.date;
+    log(`official date ${ag}: ${tried.join(', ')} -> ${best.date}`);
+    const rate = best.matched / rows.length;
+    if (rate < MIN_DATE_MATCH_RATE) {
+      dates[ag] = prev ?? start;
+      warnings.push(`${ag}: best match ${(100 * rate).toFixed(1)}% (${best.matched}/${rows.length} on ${best.date}) is below `
+        + `${100 * MIN_DATE_MATCH_RATE}%; keeping ${dates[ag]}`);
+      continue;
+    }
+    dates[ag] = best.date;
   }
-  return out;
+  for (const w of warnings) log(`WARNING official date ${w}`);
+  return { dates, warnings };
 }
 
 export interface ValidationReport { validation: Validation; allMismatches: Record<AgeGroup, Mismatch[]> }

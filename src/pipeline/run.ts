@@ -3,19 +3,19 @@
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
-  getCompetitionInfo, getCompetitionList, getOfficialRanking, getWrlHistory,
+  getCompetitionInfo, getCompetitionList, getOfficialRanking, getWrlHistory, type RawRankingRow,
 } from '../data/ijf-api';
 import { loadCompetition } from '../data/competition-loader';
 import { PLACINGS_VERSION } from '../engine/placings';
-import { AGE_GENDERS, type AgeGender } from '../data/ids';
+import { AGE_GENDERS, ID_AGE, type AgeGender } from '../data/ids';
 import type { AgeGroup, AthleteResult, CompetitionMeta, Person } from '../engine/types';
 import type { OfficialEntry } from '../engine/projection';
 import { discoverCompetitions, emptyIndex, type CompetitionIndex } from './discover';
-import { findOfficialDates, toOfficialEntries } from './official';
+import { findOfficialDates, guardOfficial, toOfficialEntries } from './official';
 import {
-  chooseOfficialDates, engineAtDates, officialPlaceLookup, summarise, validate, type Validation,
+  chooseOfficialDates, engineAtDates, officialPlaceLookup, summarise, validate, type Validation, type ValidationFile,
 } from './validate';
-import { daysBetween, mapLimit, readJson, withRetry, writeJson } from './util';
+import { daysBetween, mapLimit, mondayOnOrBefore, readJson, withRetry, writeJson } from './util';
 
 /** A stored competition ended fewer than this many days ago is refetched every run (late corrections). */
 export const RECENT_DAYS = 14;
@@ -41,6 +41,8 @@ export interface RunSummary {
   personsWithoutContinent: number;
   officialDates: Record<AgeGender, string>;
   validation: Validation;
+  /** Also written to validation.json: official lists kept from the previous run, distrusted dates, failed calls. */
+  warnings: string[];
 }
 
 /** One competition's derived data, as stored in data-cache/competitions/<id>.json (version = PLACINGS_VERSION). */
@@ -128,17 +130,33 @@ export async function runPipeline(opts: RunOptions): Promise<RunSummary> {
   });
   for (const list of [loaded, kept, failed]) list.sort((a, b) => a - b);
 
-  // 3. official ranking; wrl_history gives a first estimate of each list's date
-  const official = toOfficialEntries(await retry(() => getOfficialRanking()));
+  // 3. official ranking, one call per list (getOfficialRanking throws on a truncated answer); a missing or shrunken
+  // list keeps the previously published file. wrl_history gives a first estimate of each list's date.
+  const warnings: string[] = [];
+  const rows: RawRankingRow[] = [];
+  for (const ag of AGE_GENDERS) {
+    try {
+      rows.push(...(await retry(() => getOfficialRanking(ID_AGE[ag]))));
+    } catch (e) {
+      warnings.push(`${ag}: ranking.get_list failed: ${e instanceof Error ? e.message : e}`);
+    }
+  }
+  const previousOfficial: Partial<Record<AgeGroup, OfficialEntry[]>> = {};
+  for (const age of AGES) {
+    const prev = await readJson<OfficialEntry[]>(join(opts.outDir, `official-${age}.json`));
+    if (prev) previousOfficial[age] = prev;
+  }
+  const guarded = guardOfficial(toOfficialEntries(rows), previousOfficial);
+  warnings.push(...guarded.warnings);
+  const { official } = guarded;
   const found = await findOfficialDates(official, {
     wrlHistory: (id) => retry(() => getWrlHistory(id)), breakdownHtml: (id) => retry(() => fetchBreakdownHtml(id)), log,
   });
   const previous = await readJson<MetaFile>(join(opts.outDir, 'meta.json'));
   const historyDates = {} as Record<AgeGender, string>;
   for (const ag of AGE_GENDERS) {
-    const d = found[ag] ?? previous?.officialDates?.[ag];
-    if (!d) throw new Error(`no official ranking date for ${ag}`);
-    if (!found[ag]) log(`official date ${ag}: not found, starting from the previous ${d}`);
+    const d = found[ag] ?? previous?.officialDates?.[ag] ?? mondayOnOrBefore(today);
+    if (!found[ag]) warnings.push(`${ag}: no wrl_history/breakdown date for the list; starting from ${d}`);
     historyDates[ag] = d;
   }
 
@@ -168,9 +186,13 @@ export async function runPipeline(opts: RunOptions): Promise<RunSummary> {
     if (!p.continent) personsWithoutContinent++;
   }
 
-  // the list can be newer than wrl_history: take the Monday from the history date on that the engine matches best
+  // the list can be newer than wrl_history: take the Monday that the engine matches best, never going back
   const engine = engineAtDates(allResults, comps, officialPlaceLookup(official));
-  const officialDates = chooseOfficialDates(historyDates, today, official, engine, log);
+  const choice = chooseOfficialDates({
+    history: historyDates, previous: previous?.officialDates ?? {}, today, official, engine, log,
+  });
+  warnings.push(...choice.warnings);
+  const officialDates = choice.dates;
   const report = validate(official, officialDates, engine);
   const { validation } = report;
 
@@ -186,7 +208,8 @@ export async function runPipeline(opts: RunOptions): Promise<RunSummary> {
     await writeJson(join(opts.outDir, `official-${age}.json`), official.filter((o: OfficialEntry) => o.category.startsWith(`${age}-`)));
   }
   await writeJson(join(opts.outDir, 'persons.json'), Object.fromEntries([...persons].sort((a, b) => a[0] - b[0])));
-  await writeJson(join(opts.outDir, 'validation.json'), validation);
+  const validationFile: ValidationFile = { ...validation, warnings };
+  await writeJson(join(opts.outDir, 'validation.json'), validationFile);
 
   const competitions = Object.fromEntries(AGES.map((a) => [a, metas.filter((m) => m.age === a).length])) as Record<AgeGroup, number>;
   log(`competitions: ${AGES.map((a) => `${a} ${competitions[a]} (with results ${Object.keys(resultsByAge[a]).length})`).join(', ')}`);
@@ -194,7 +217,8 @@ export async function runPipeline(opts: RunOptions): Promise<RunSummary> {
   log(`official dates: ${AGE_GENDERS.map((ag) => `${ag} ${officialDates[ag]}`).join(', ')}`);
   log(`persons: ${persons.size}, without continent: ${personsWithoutContinent}`);
   for (const line of summarise(report)) log(`validation ${line}`);
-  return { competitions, loaded, kept, failed, personsWithoutContinent, officialDates, validation };
+  for (const w of warnings) log(`WARNING ${w}`);
+  return { competitions, loaded, kept, failed, personsWithoutContinent, officialDates, validation, warnings };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
