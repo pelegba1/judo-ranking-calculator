@@ -157,7 +157,9 @@ describe('domestic rule', () => {
 
   it('junior world ch: 9 + 9 host athletes; the 10th host man gets 0 in junior and senior views', () => {
     const wc = comp('world_ch', '2025-10-05', 'jun', 'PER');
-    const men = [...Array(10)].map((_, i) => res(wc, 300 + i, i === 9 ? 9 : 7, { country: 'PER', weight: `-${60 + i}` }));
+    const weights = ['-60', '-66', '-73', '-81', '-90', '-100', '+100'];
+    const men = [...Array(10)].map((_, i) =>
+      res(wc, 300 + i, i === 9 ? 9 : 7, { country: 'PER', weight: weights[i % 7] }));
     for (const view of ['jun', 'sen'] as const) {
       const scored = scoreResults(men, mapOf([wc]), '2025-11-03', view, noOfficial);
       expect(scored.filter((s) => s.value === 0).map((s) => s.result.idPerson)).toEqual([309]);
@@ -181,6 +183,16 @@ describe('views', () => {
     const jun = computeRanking(results, mapOf([jwc, gs]), '2026-11-02', 'jun', noOfficial);
     expect(jun.get('jun-m-60')![0].points).toBe(700);
     expect(jun.has('sen-m-60')).toBe(false);
+  });
+
+  it('a junior WC result at a weight with no senior equivalent (men -55) is in no senior category', () => {
+    const jwc = comp('world_ch', '2026-10-05', 'jun');
+    const results = [res(jwc, 1, 1, { weight: '-55' }), res(jwc, 2, 1, { gender: 'f', weight: '-44' })];
+    expect(scoreResults(results, mapOf([jwc]), '2026-11-02', 'sen', noOfficial)).toEqual([]);
+    expect([...computeRanking(results, mapOf([jwc]), '2026-11-02', 'sen', noOfficial).keys()]).toEqual([]);
+    // The junior view keeps its own results as given.
+    expect([...computeRanking(results, mapOf([jwc]), '2026-11-02', 'jun', noOfficial).keys()])
+      .toEqual(['jun-m-55', 'jun-f-44']);
   });
 
   it('cadet events are not in the senior or junior view; junior GP not in the senior view', () => {

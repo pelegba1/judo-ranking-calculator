@@ -1,9 +1,8 @@
 import type { AgeGroup, EventType } from '../types';
+import type { Period } from './decay';
 
 // Which scored results count towards an athlete's total, and how equal totals are ordered.
 // Spec 5.1 (SOR 2026 sections 3.1-3.2).
-
-export type Period = 'current' | 'previous' | 'expired';
 
 /** The parts of a scored result that the counting and tie-break rules look at. */
 export interface Countable {

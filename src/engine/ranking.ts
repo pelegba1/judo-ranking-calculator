@@ -1,5 +1,6 @@
 import type { AgeGroup, AthleteResult, CategoryKey, CompetitionMeta } from './types';
-import { categoryKey, scoreResults, type OfficialPlace, type ScoredResult } from './scoring';
+import { scoreResults, type OfficialPlace, type ScoredResult } from './scoring';
+import { categoryKey } from './rules/categories';
 import { compareTied } from './rules/counting';
 
 export interface RankingEntry {
