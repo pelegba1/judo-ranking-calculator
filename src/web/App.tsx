@@ -8,6 +8,8 @@ import { parseJudoTvUrl, resolveCompetition } from './judotv';
 import { AGE_LABEL, GENDER_LABEL, S, formatDate } from './strings';
 import { CategoryTable } from './screens/CategoryTable';
 import { AthleteBreakdown } from './screens/AthleteBreakdown';
+import { WatchList } from './screens/WatchList';
+import { useWatchlist, type Watchlist } from './state/watchlist';
 import { WEIGHTS } from '../engine/rules/categories';
 import type { AgeGroup, AthleteResult, CategoryKey, CompetitionMeta, Person } from '../engine/types';
 import type { ProjectedEntry } from '../engine/projection';
@@ -23,6 +25,7 @@ const daysBefore = (iso: string, n: number) => new Date(Date.parse(iso.slice(0, 
 export function App() {
   const data = useData();
   const { hash, setHash, pushHash } = useScenario();
+  const watchlist = useWatchlist();
   const { meta, validation } = data;
 
   if (data.status === 'loading') return <Shell><p className="state">{S.loading}</p></Shell>;
@@ -36,7 +39,7 @@ export function App() {
       </Shell>
     );
   }
-  return <Calculator meta={meta} validation={validation} hash={hash} setHash={setHash} pushHash={pushHash} />;
+  return <Calculator meta={meta} validation={validation} hash={hash} setHash={setHash} pushHash={pushHash} watchlist={watchlist} />;
 }
 
 function Shell({ children, header }: { children: ReactNode; header?: ReactNode }) {
@@ -52,9 +55,9 @@ function Shell({ children, header }: { children: ReactNode; header?: ReactNode }
   );
 }
 
-function Calculator({ meta, validation, hash, setHash, pushHash }: {
+function Calculator({ meta, validation, hash, setHash, pushHash, watchlist }: {
   meta: MetaFile; validation: ValidationFile; hash: ScenarioHash; setHash: (h: ScenarioHash) => void;
-  pushHash: (h: ScenarioHash) => void;
+  pushHash: (h: ScenarioHash) => void; watchlist: Watchlist;
 }) {
   const data = useData();
   const { age, gender, weight } = hash;
@@ -69,6 +72,7 @@ function Calculator({ meta, validation, hash, setHash, pushHash }: {
 
   // A known competition in the hash that gives no points in this age group (hand-edited link): drop it.
   useEffect(() => {
+    if (hash.watch) return; // the watch list spans every age group
     const keep = hash.added.filter((id) => { const c = comps.get(id); return !c || appliesTo(c, age); });
     if (keep.length !== hash.added.length) setHash({ ...hash, added: keep });
   }, [hash, comps, age, setHash]);
@@ -107,11 +111,22 @@ function Calculator({ meta, validation, hash, setHash, pushHash }: {
     [ready, meta.officialDates, comps, official, results, live],
   );
 
+  if (hash.watch) {
+    return (
+      <Shell header={<><StatusLine meta={meta} validation={validation} age={age} /><Nav hash={hash} count={watchlist.ids.length} /></>}>
+        <section className="card" aria-labelledby="watch-title">
+          <h2 id="watch-title">{S.watchTitle}</h2>
+          <WatchList meta={meta} comps={comps} hash={hash} setHash={setHash} watchlist={watchlist} live={live} />
+        </section>
+      </Shell>
+    );
+  }
+
   const nightlyOf = (c: Comp) => data.results(c.age)?.[c.id];
   const v = validation[age];
 
   return (
-    <Shell header={<StatusLine meta={meta} validation={validation} age={age} />}>
+    <Shell header={<><StatusLine meta={meta} validation={validation} age={age} /><Nav hash={hash} count={watchlist.ids.length} /></>}>
       <ViewPicker hash={hash} comps={comps} setHash={setHash} />
       <AddCompetition meta={meta} comps={comps} hash={hash} setHash={setHash} />
       <CompetitionList
@@ -130,11 +145,22 @@ function Calculator({ meta, validation, hash, setHash, pushHash }: {
         ) : !projectionData ? (
           <p className="state">{S.ageLoading}</p>
         ) : (
-          <ProjectionView data={projectionData} scenario={scenario} persons={data.persons} hash={hash} setHash={setHash} pushHash={pushHash} />
+          <ProjectionView data={projectionData} scenario={scenario} persons={data.persons} hash={hash} setHash={setHash} pushHash={pushHash} watchlist={watchlist} />
         )}
       </section>
       {v && v.checked > 0 && <p className="footnote">{S.validation(pct(v.matched, v.checked))} · {S.gaps(v.checked - v.matched)}</p>}
     </Shell>
+  );
+}
+
+/** Table / watch list switch, keeping the scenario (added competitions, date) in the links. */
+function Nav({ hash, count }: { hash: ScenarioHash; count: number }) {
+  const { watch: _w, ids: _i, athlete: _a, ...table } = hash;
+  return (
+    <nav className="nav">
+      <a href={formatHash(table)} aria-current={hash.watch ? undefined : 'page'}>{S.navTable}</a>
+      <a href={formatHash({ ...hash, watch: true, ids: undefined })} aria-current={hash.watch ? 'page' : undefined}>{S.navWatch(count)}</a>
+    </nav>
   );
 }
 
@@ -387,9 +413,9 @@ function TargetDate({ meta, hash, scenario, setHash }: {
  * The projected category (table) or one athlete's breakdown, by the hash. The projection is computed from a
  * deferred copy of the inputs so checkboxes and the date input stay responsive.
  */
-function ProjectionView({ data, scenario, persons, hash, setHash, pushHash }: {
+function ProjectionView({ data, scenario, persons, hash, setHash, pushHash, watchlist }: {
   data: ProjectionData; scenario: Scenario; persons: Map<number, Person> | undefined;
-  hash: ScenarioHash; setHash: (h: ScenarioHash) => void; pushHash: (h: ScenarioHash) => void;
+  hash: ScenarioHash; setHash: (h: ScenarioHash) => void; pushHash: (h: ScenarioHash) => void; watchlist: Watchlist;
 }) {
   const key = `${scenario.age}|${scenario.added.join(',')}|${scenario.targetDate}`;
   const input = useMemo(() => ({ data, scenario: { ...scenario, gender: 'm' as const, weight: '' }, key }),
@@ -428,13 +454,14 @@ function ProjectionView({ data, scenario, persons, hash, setHash, pushHash }: {
           entry={entries.find((e) => e.idPerson === open)} idPerson={open} person={persons?.get(open)}
           age={scenario.age} gender={scenario.gender} weight={scenario.weight} added={added}
           // back to the table via the history entry we pushed; a link opened directly just drops the athlete
+          starred={watchlist.set.has(open)} onToggleStar={watchlist.toggle}
           onBack={() => (history.state?.pushed ? history.back() : setHash({ ...hash, athlete: undefined }))}
         />
       ) : (
         <>
           <p className="muted small table-hint">{S.tableHint}{added.size > 0 && ` · ${S.highlightHint}`}</p>
           <CategoryTable
-            entries={entries} persons={persons} added={added} onOpen={openAthlete}
+            entries={entries} persons={persons} added={added} onOpen={openAthlete} watched={watchlist.set} onToggleStar={watchlist.toggle}
             hrefOf={(id) => formatHash({ ...hash, athlete: id })}
           />
         </>

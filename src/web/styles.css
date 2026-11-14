@@ -156,20 +156,32 @@ legend { padding: 0; margin-bottom: 6px; font-size: 0.85rem; color: var(--muted)
 /* category table: rows are links; header sticks while scrolling */
 .table-hint { margin-bottom: 6px; }
 .ctable { display: flex; flex-direction: column; }
-.crow {
-  display: grid; grid-template-columns: 2.6em 2.5em minmax(0, 1fr) 2.5em 3.4em; gap: 4px 4px; align-items: center;
-  min-height: var(--tap); padding: 4px 4px; border-bottom: 1px solid var(--border);
-  color: inherit; text-decoration: none; -webkit-tap-highlight-color: transparent;
+/* a row = [star button][link]; the star is a sibling of the link, never inside it */
+.rrow {
+  display: flex; align-items: stretch; border-bottom: 1px solid var(--border);
   content-visibility: auto; contain-intrinsic-size: auto 52px;
+}
+.crow {
+  flex: 1; min-width: 0; display: grid; grid-template-columns: 2.6em 2.5em minmax(0, 1fr) 2.5em 3.4em; gap: 4px; align-items: center;
+  min-height: var(--tap); padding: 4px;
+  color: inherit; text-decoration: none; -webkit-tap-highlight-color: transparent;
 }
 a.crow:hover { background: var(--surface-2); }
 a.crow:active { background: var(--accent-soft); }
-.crow.is-hit { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
-.crow.is-hit:hover { background: var(--accent-soft); filter: brightness(0.97); }
+.rrow.is-hit { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+.rrow.is-hit a.crow:hover { background: var(--accent-soft); filter: brightness(0.97); }
+.star, .star-spacer { flex: none; width: var(--tap); min-height: var(--tap); }
+.star {
+  border: 0; background: transparent; cursor: pointer; font-size: 1.35rem; line-height: 1; color: var(--muted);
+  display: flex; align-items: center; justify-content: center; padding: 0;
+}
+.star.is-on { color: #d99a00; }
+.star:hover { background: var(--surface-2); }
 .chead {
   position: sticky; top: 0; z-index: 2; background: var(--surface); content-visibility: visible;
   font-size: 0.72rem; color: var(--muted); white-space: nowrap; border-bottom: 2px solid var(--border); min-height: 36px;
 }
+.chead .crow { min-height: 36px; }
 .c-place { font-weight: 700; text-align: center; font-variant-numeric: tabular-nums; }
 .chead .c-place, .chead span { font-weight: 500; }
 .c-move { font-size: 0.8rem; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -186,7 +198,30 @@ a.crow:active { background: var(--accent-soft); }
 .c-points { display: flex; flex-direction: column; align-items: flex-end; font-variant-numeric: tabular-nums; font-weight: 600; }
 .chead .c-points { align-items: flex-end; }
 
+/* nav + watch list */
+.nav { display: flex; gap: 6px; margin-top: 10px; }
+.nav a {
+  display: inline-flex; align-items: center; min-height: var(--tap); padding: 0 14px; border-radius: 10px;
+  background: var(--surface-2); color: inherit; text-decoration: none; font-weight: 600;
+}
+.nav a[aria-current="page"] { background: var(--accent); color: var(--on-accent); }
+.watch-list { list-style: none; margin: 0; padding: 0; }
+.watch-item { display: flex; align-items: stretch; border-bottom: 1px solid var(--border); }
+.watch-link {
+  flex: 1; min-width: 0; display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  min-height: var(--tap); padding: 6px 4px; color: inherit; text-decoration: none;
+}
+a.watch-link:hover { background: var(--surface-2); }
+.watch-who { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.watch-name { font-weight: 600; direction: ltr; text-align: right; overflow-wrap: anywhere; }
+.watch-fig { display: flex; flex-direction: column; align-items: flex-end; flex: none; font-variant-numeric: tabular-nums; font-weight: 600; }
+.share-banner { display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 10px; background: var(--accent-soft); margin-bottom: 10px; }
+.share-banner p { margin: 0; }
+.share-banner .row { display: flex; gap: 8px; }
+.watch-tools { margin-top: 10px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
 /* athlete breakdown */
+.ath-top { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
 .back { margin-bottom: 8px; }
 .ath-name { margin: 0; font-size: 1.2rem; direction: ltr; text-align: right; overflow-wrap: anywhere; }
 .ath-head .muted { margin: 2px 0 10px; }

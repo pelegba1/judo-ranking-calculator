@@ -8,6 +8,7 @@ import { competitionInView } from '../../engine/rules/views';
 import type { OfficialPlace } from '../../engine/rules/domestic';
 import type { AgeGroup, AthleteResult, CategoryKey, CompetitionMeta, Gender } from '../../engine/types';
 import type { AgeGender } from '../../data/ids';
+import { decodeWatchlist, encodeWatchlist } from './watchlist';
 
 export const AGES: AgeGroup[] = ['sen', 'jun', 'cad'];
 export const GENDERS: Gender[] = ['m', 'f'];
@@ -17,6 +18,10 @@ export interface ScenarioHash {
   age: AgeGroup; gender: Gender; weight: string; added: number[]; date: string | null;
   /** Athlete breakdown open (#/sen/m/-60/athlete/20144); absent = the category table. */
   athlete?: number;
+  /** The watch list screen (#/watch); age/gender/weight are then unused defaults. */
+  watch?: boolean;
+  /** Athlete ids of a shared link (#/watch?ids=1,2): offered to the user, then dropped from the hash. */
+  ids?: number[];
 }
 /** The scenario the projection runs on. */
 export interface Scenario { age: AgeGroup; gender: Gender; weight: string; added: number[]; targetDate: string }
@@ -87,6 +92,12 @@ export function parseHash(hash: string): ScenarioHash {
   }
   const d = query.get('date') ?? '';
   const out: ScenarioHash = { age, gender, weight, added, date: isIsoDate(d) ? d : null };
+  if (path[0] === 'watch') {
+    out.watch = true;
+    const ids = decodeWatchlist(query.get('ids') ?? '');
+    if (ids.length) out.ids = ids;
+    return out;
+  }
   if (path[3] === 'athlete' && /^\d+$/.test(path[4] ?? '')) {
     const id = Number(path[4]);
     if (id > 0 && Number.isSafeInteger(id)) out.athlete = id;
@@ -96,9 +107,12 @@ export function parseHash(hash: string): ScenarioHash {
 
 export function formatHash(s: ScenarioHash): string {
   const params: string[] = [];
+  if (s.watch && s.ids?.length) params.push(`ids=${encodeWatchlist(s.ids)}`);
   if (s.added.length) params.push(`add=${s.added.join(',')}`);
   if (s.date) params.push(`date=${s.date}`);
-  return `#/${s.age}/${s.gender}/${encodeURIComponent(s.weight)}${s.athlete ? `/athlete/${s.athlete}` : ''}${params.length ? `?${params.join('&')}` : ''}`;
+  const query = params.length ? `?${params.join('&')}` : '';
+  if (s.watch) return `#/watch${query}`;
+  return `#/${s.age}/${s.gender}/${encodeURIComponent(s.weight)}${s.athlete ? `/athlete/${s.athlete}` : ''}${query}`;
 }
 
 // ---------- competitions ----------
@@ -125,7 +139,7 @@ export function withView(
     const c = comps.get(id);
     return !c || appliesTo(c, age);
   });
-  const { athlete: _athlete, ...rest } = h;
+  const { athlete: _athlete, watch: _watch, ids: _ids, ...rest } = h;
   return { ...rest, age, gender, weight, added };
 }
 

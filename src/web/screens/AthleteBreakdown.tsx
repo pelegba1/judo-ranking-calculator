@@ -3,6 +3,7 @@ import type { ProjectedEntry } from '../../engine/projection';
 import type { ScoredResult } from '../../engine/scoring';
 import type { Period } from '../../engine/rules/decay';
 import { formatDate, formatDelta, formatMovement, formatPoints, placeLabel } from '../format';
+import { StarButton } from './StarButton';
 import { AGE_LABEL, GENDER_LABEL, S } from '../strings';
 
 interface Props {
@@ -14,6 +15,8 @@ interface Props {
   gender: Gender;
   added: ReadonlySet<number>;
   onBack: () => void;
+  starred: boolean;
+  onToggleStar: (idPerson: number) => void;
 }
 
 type Group = { title: string; rows: ScoredResult[] };
@@ -37,14 +40,20 @@ function groupsOf(age: AgeGroup, rows: ScoredResult[]): Group[] {
   ].filter((g) => g.rows.length > 0);
 }
 
-export function AthleteBreakdown({ entry, idPerson, person, age, weight, gender, added, onBack }: Props) {
+export function AthleteBreakdown({ entry, idPerson, person, age, weight, gender, added, onBack, starred, onToggleStar }: Props) {
   const name = person?.name ?? S.athleteUnknown(idPerson);
   const back = <button type="button" className="btn btn-small back" onClick={onBack}>{S.back}</button>;
+  const titleRow = (
+    <div className="ath-top">
+      <h2 className="ath-name">{name}</h2>
+      <StarButton on={starred} onToggle={() => onToggleStar(idPerson)} />
+    </div>
+  );
   if (!entry) {
     return (
       <div>
         {back}
-        <h2 className="ath-name">{name}</h2>
+        {titleRow}
         <p className="muted">{S.athleteNotFound}</p>
       </div>
     );
@@ -58,7 +67,7 @@ export function AthleteBreakdown({ entry, idPerson, person, age, weight, gender,
     <div className="breakdown">
       {back}
       <header className="ath-head">
-        <h2 className="ath-name">{name}</h2>
+        {titleRow}
         <p className="muted small">
           <bdi dir="ltr">{person?.country ?? ''}</bdi> · {AGE_LABEL[age]} · {GENDER_LABEL[gender]} · <bdi dir="ltr">{weight}</bdi> {S.kg}
         </p>
