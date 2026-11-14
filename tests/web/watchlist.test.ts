@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { decodeWatchlist, encodeWatchlist, loadWatchlist, saveWatchlist, WATCHLIST_KEY } from '../../src/web/state/watchlist';
 import { formatHash, parseHash } from '../../src/web/state/useScenario';
+import { loadLastView, saveLastView } from '../../src/web/state/lastView';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -58,5 +59,31 @@ describe('watch hash route', () => {
     expect(formatHash({ ...h, ids: [1, 3] })).toBe('#/watch?ids=1,3&add=3159&date=2026-11-16');
     expect(formatHash({ ...h, added: [], date: null })).toBe('#/watch');
     expect(parseHash(formatHash({ ...h, ids: [1, 3] }))).toMatchObject({ watch: true, ids: [1, 3], added: [3159] });
+  });
+});
+
+describe('decode cap', () => {
+  it('keeps at most 500 ids', () => {
+    const s = Array.from({ length: 800 }, (_, i) => i + 1).join(',');
+    const ids = decodeWatchlist(s);
+    expect(ids).toHaveLength(500);
+    expect(ids[499]).toBe(500);
+  });
+});
+
+describe('last view memory', () => {
+  const mem = () => { const m: Record<string, string> = {}; return { getItem: (k: string) => m[k] ?? null, setItem: (k: string, v: string) => { m[k] = v; } }; };
+  it('round-trips and validates', () => {
+    vi.stubGlobal('sessionStorage', mem());
+    expect(loadLastView()).toBeNull();
+    saveLastView({ age: 'cad', gender: 'f', weight: '-52' });
+    expect(loadLastView()).toEqual({ age: 'cad', gender: 'f', weight: '-52' });
+    sessionStorage.setItem('lastView.v1', JSON.stringify({ age: 'cad', gender: 'f', weight: '-999' }));
+    expect(loadLastView()).toBeNull();
+  });
+  it('is null when storage throws', () => {
+    vi.stubGlobal('sessionStorage', { getItem() { throw new Error('x'); }, setItem() { throw new Error('x'); } });
+    expect(loadLastView()).toBeNull();
+    expect(() => saveLastView({ age: 'sen', gender: 'm', weight: '-60' })).not.toThrow();
   });
 });

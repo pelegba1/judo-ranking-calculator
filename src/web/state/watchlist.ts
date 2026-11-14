@@ -27,9 +27,19 @@ export function saveWatchlist(ids: number[]): void {
 
 export const encodeWatchlist = (ids: number[]): string => ids.join(',');
 
-/** "1,a,,3" -> [1, 3]: anything that is not a positive integer id is dropped, duplicates too. */
+export const MAX_SHARED_IDS = 500;
+
+/** "1,a,,3" -> [1, 3]: anything that is not a positive integer id is dropped, duplicates too; at most 500 ids. */
 export function decodeWatchlist(s: string): number[] {
-  return unique(s.split(',').map((x) => x.trim()).filter((x) => /^\d+$/.test(x)).map(Number).filter(isId));
+  const out = new Set<number>();
+  for (const part of s.split(',')) {
+    const x = part.trim();
+    if (!/^\d+$/.test(x)) continue;
+    const n = Number(x);
+    if (isId(n)) out.add(n);
+    if (out.size >= MAX_SHARED_IDS) break;
+  }
+  return [...out];
 }
 
 export interface Watchlist {

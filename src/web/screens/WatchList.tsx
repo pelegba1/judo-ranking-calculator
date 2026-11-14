@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useDeferredValue, useMemo, useState } from 'react';
 import { useData } from '../state/useData';
 import { AGES, buildProjection, formatHash, resolveScenario, type ProjectionData, type ScenarioHash } from '../state/useScenario';
 import { encodeWatchlist, type Watchlist } from '../state/watchlist';
@@ -30,34 +30,50 @@ export function WatchList({ meta, comps, hash, setHash, watchlist, live }: Props
 
   const [o0, o1, o2] = files.map((f) => f.official);
   const [r0, r1, r2] = files.map((f) => f.results);
-  const places = useMemo(() => {
-    const out = new Map<number, Where[]>();
-    if (!loadedAll || watchlist.ids.length === 0) return out;
-    const official: Record<AgeGroup, OfficialEntry[]> = { sen: o0!, jun: o1!, cad: o2! };
-    const results: Record<AgeGroup, Record<string, AthleteResult[]>> = { sen: r0!, jun: r1!, cad: r2! };
-    const wanted = new Set(watchlist.ids);
+  const hasWatched = watchlist.ids.length > 0;
+  // Per-age projections do not depend on who is watched (un-starring must not recompute them), and are heavy:
+  // their inputs go through useDeferredValue like the table's, and the screen shows a busy state meanwhile.
+  const input = useMemo(
+    () => ({ loadedAll: loadedAll && hasWatched, o: [o0, o1, o2], r: [r0, r1, r2], meta, comps, live, added: hash.added, date: hash.date }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- hash.added/date are the scenario inputs
+    [loadedAll, hasWatched, o0, o1, o2, r0, r1, r2, meta, comps, live, hash.added, hash.date],
+  );
+  const deferred = useDeferredValue(input);
+  const stale = deferred !== input;
+  const projections = useMemo(() => {
+    const out = new Map<AgeGroup, Map<CategoryKey, ProjectedEntry[]>>();
+    if (!deferred.loadedAll) return out;
+    const official: Record<AgeGroup, OfficialEntry[]> = { sen: deferred.o[0]!, jun: deferred.o[1]!, cad: deferred.o[2]! };
+    const results: Record<AgeGroup, Record<string, AthleteResult[]>> = { sen: deferred.r[0]!, jun: deferred.r[1]!, cad: deferred.r[2]! };
     for (const age of AGES) {
       const pd: ProjectionData = {
-        officialDates: meta.officialDates, comps, live,
+        officialDates: deferred.meta.officialDates, comps: deferred.comps, live: deferred.live,
         // seniors also draw on junior world championships
         official: age === 'sen' ? [...official.sen, ...official.jun] : official[age],
         results: age === 'sen' ? { ...results.jun, ...results.sen } : results[age],
       };
-      const scenario = resolveScenario({ ...hash, age }, comps, meta.officialDates);
-      for (const [cat, entries] of buildProjection(pd, scenario)) {
+      const scenario = resolveScenario({ age, gender: 'm', weight: '', added: deferred.added, date: deferred.date }, deferred.comps, deferred.meta.officialDates);
+      out.set(age, buildProjection(pd, scenario));
+    }
+    return out;
+  }, [deferred]);
+  // cheap second step: pick the watched athletes out of the projections
+  const places = useMemo(() => {
+    const out = new Map<number, Where[]>();
+    const wanted = new Set(watchlist.ids);
+    for (const [age, proj] of projections) {
+      for (const [cat, entries] of proj) {
         for (const entry of entries) {
           if (!wanted.has(entry.idPerson)) continue;
-          const key = cat as CategoryKey;
-          const gender = key[4] as Gender;
+          const gender = cat[4] as Gender;
           const list = out.get(entry.idPerson) ?? [];
-          list.push({ age, gender, weight: key.slice(5), entry });
+          list.push({ age, gender, weight: cat.slice(5), entry });
           out.set(entry.idPerson, list);
         }
       }
     }
     return out;
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- hash.added/date are the scenario inputs
-  }, [loadedAll, o0, o1, o2, r0, r1, r2, meta, comps, live, hash.added, hash.date, watchlist.ids]);
+  }, [projections, watchlist.ids]);
 
   return (
     <div>
@@ -68,15 +84,17 @@ export function WatchList({ meta, comps, hash, setHash, watchlist, live }: Props
         <div className="state state-error" role="alert"><p>{S.loadError}</p></div>
       ) : !loadedAll ? (
         <p className="state">{S.ageLoading}</p>
+      ) : projections.size === 0 ? (
+        <p className="state">{S.computing}</p>
       ) : (
-        <>
+        <div className={stale ? 'is-stale' : undefined} aria-busy={stale}>
           <ul className="watch-list">
             {watchlist.ids.map((id) => (
               <WatchRow key={id} id={id} where={places.get(id)} hash={hash} watchlist={watchlist} />
             ))}
           </ul>
           <ShareLink ids={watchlist.ids} />
-        </>
+        </div>
       )}
     </div>
   );

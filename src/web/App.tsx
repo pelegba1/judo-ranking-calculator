@@ -9,6 +9,7 @@ import { AGE_LABEL, GENDER_LABEL, S, formatDate } from './strings';
 import { CategoryTable } from './screens/CategoryTable';
 import { AthleteBreakdown } from './screens/AthleteBreakdown';
 import { WatchList } from './screens/WatchList';
+import { loadLastView, saveLastView } from './state/lastView';
 import { useWatchlist, type Watchlist } from './state/watchlist';
 import { WEIGHTS } from '../engine/rules/categories';
 import type { AgeGroup, AthleteResult, CategoryKey, CompetitionMeta, Person } from '../engine/types';
@@ -61,6 +62,7 @@ function Calculator({ meta, validation, hash, setHash, pushHash, watchlist }: {
 }) {
   const data = useData();
   const { age, gender, weight } = hash;
+  useEffect(() => { if (!hash.watch) saveLastView({ age, gender, weight }); }, [hash.watch, age, gender, weight]);
   const extraSize = data.extra.size;
 
   const comps = useMemo(() => {
@@ -155,7 +157,8 @@ function Calculator({ meta, validation, hash, setHash, pushHash, watchlist }: {
 
 /** Table / watch list switch, keeping the scenario (added competitions, date) in the links. */
 function Nav({ hash, count }: { hash: ScenarioHash; count: number }) {
-  const { watch: _w, ids: _i, athlete: _a, ...table } = hash;
+  const { watch: _w, ids: _i, athlete: _a, ...rest } = hash;
+  const table = hash.watch ? { ...rest, ...loadLastView() } : rest; // the watch route's hash holds only defaults
   return (
     <nav className="nav">
       <a href={formatHash(table)} aria-current={hash.watch ? undefined : 'page'}>{S.navTable}</a>
