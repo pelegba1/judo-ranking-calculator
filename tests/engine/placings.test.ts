@@ -84,20 +84,24 @@ describe('derivePlacings', () => {
   const fightsOf = (cs: RawContest[], id: string) => cs.filter((b) => b.id_person_white === id || b.id_person_blue === id);
   const lostIn = (cs: RawContest[], id: string, round: string) =>
     cs.some((b) => b.round_name === round && b.id_winner && b.id_winner !== id && (b.id_person_white === id || b.id_person_blue === id));
-  const loserOf = (b: RawContest) => (b.id_winner === b.id_person_white ? b.id_person_blue : b.id_person_white)!;
+  const loserOf = (b: RawContest) => {
+    if (!b.id_winner) throw new Error("bout without winner");
+    return (b.id_winner === b.id_person_white ? b.id_person_blue : b.id_person_white)!;
+  };
 
   it('3157: QF loser losing repechage is 7; repechage winner losing bronze is 5 (wins over all bouts)', () => {
     const { f, res } = run('3157', 3157);
     const reps = f.contests.filter((b) => b.round_name === 'Repechage');
+    const wOf = (id: string) => fightsOf(f.contests, id)[0].weight;
     const qf7 = reps.map(loserOf).filter((id) => lostIn(f.contests, id, 'Quarter-Final'));
     expect(qf7.length).toBeGreaterThan(0);
-    for (const id of qf7) expect(res.find((r) => r.idPerson === Number(id))!.place).toBe(7);
+    for (const id of qf7) expect(res.find((r) => r.idPerson === Number(id) && r.weight === wOf(id))!.place).toBe(7);
 
     const viaRep = f.contests.filter((b) => b.round_name === 'Bronze').map(loserOf)
       .filter((id) => reps.some((b) => b.id_winner === id));
     expect(viaRep.length).toBeGreaterThan(0);
     for (const id of viaRep) {
-      const a = res.find((r) => r.idPerson === Number(id))!;
+      const a = res.find((r) => r.idPerson === Number(id) && r.weight === wOf(id))!;
       expect(a.place).toBe(5);
       expect(a.wins).toBe(fightsOf(f.contests, id).filter((b) => b.id_winner === id).length);
     }
@@ -120,38 +124,49 @@ describe('derivePlacings', () => {
   });
 
   it('entrant with no bouts gets the first-round loss place and 0 wins', () => {
+    // 3157 -60 (id_weight 1) starts at Round of 32 (verified in fixture): first-round loser gets 17
     const f = load('3157');
-    const idWeight = f.contests.find((b) => b.id_person_white === '20144' || b.id_person_blue === '20144')!.id_weight;
-    const rounds = f.contests.filter((b) => b.id_weight === idWeight)
-      .map((b) => /^Round of (\d+)$/.exec(b.round_name)).filter(Boolean).map((m) => Number(m![1]));
-    const expected = Math.max(...rounds) / 2 + 1;
+    expect(new Set(f.contests.filter((b) => b.id_weight === '1').map((b) => b.round_name)).has('Round of 64')).toBe(false);
+    expect(f.contests.some((b) => b.id_weight === '1' && b.round_name === 'Round of 32')).toBe(true);
     const comp = JSON.parse(JSON.stringify(f.competitors));
     const group = (Object.values(comp.categories) as Record<string, { persons: Record<string, unknown> }>[])
-      .map((ag) => ag[idWeight]).find(Boolean)!;
-    group.persons['999999'] = { id_person: '999999', country_short: 'XXX', gender: '1', id_weight: idWeight };
-    const a = derivePlacings(meta(3157), f.contests, comp, f.results).find((r) => r.idPerson === 999999)!;
-    expect(a.place).toBe(expected);
+      .map((ag) => ag['1']).find(Boolean)!;
+    group.persons['999999'] = { id_person: '999999', country_short: 'XXX', gender: '1', id_weight: '1' };
+    const a = derivePlacings(meta(3157), f.contests, comp, f.results).find((r) => r.idPerson === 999999 && r.weight === '-60')!;
+    expect(a.place).toBe(17);
     expect(a.wins).toBe(0);
     expect(a.country).toBe('XXX');
   });
 
-  it('partial-3159: every athlete of an unfinished category is categoryFinished=false', () => {
+  it('partial-3159: unfinished categories get provisional places, never a medal for unbeaten athletes', () => {
     const { f, res } = run('partial-3159', 3159);
     const unfinished = [...new Set(f.contests.map((b) => b.id_weight))].filter((w) => {
       const fin = f.contests.find((b) => b.id_weight === w && b.round_name === 'Final');
       return !fin || fin.is_finished !== '1';
     });
-    expect(unfinished.length).toBeGreaterThan(0);
-    let n = 0;
+    expect(unfinished.sort()).toEqual(['11', '3', '4']);
     for (const w of unfinished) {
       for (const b of f.contests.filter((x) => x.id_weight === w)) {
         for (const id of [b.id_person_white, b.id_person_blue]) {
-          expect(res.find((r) => r.idPerson === Number(id))!.categoryFinished).toBe(false);
-          n++;
+          const a = res.find((r) => r.idPerson === Number(id) && r.weight === b.weight)!;
+          expect(a.categoryFinished).toBe(false);
+          expect(a.place).toBeGreaterThanOrEqual(9);
         }
       }
     }
-    expect(n).toBeGreaterThan(0);
+    const at = (id: number, weight: string) => res.find((r) => r.idPerson === id && r.weight === weight)!;
+    // -73: Round of 64 only. 73013 lost it (-> 33); 64502 won it and is unbeaten (provisional 9, not a medal)
+    expect(at(73013, '-73').place).toBe(33);
+    expect(at(64502, '-73').place).toBe(9);
+    expect(at(64502, '-73').wins).toBe(1);
+    // -63: Round of 32 only. 65773 lost it (-> 17); 48861 won it and is unbeaten
+    expect(at(65773, '-63').place).toBe(17);
+    expect(at(48861, '-63').place).toBe(9);
+    // finished -60 category (id_weight 1): a Round of 16 loser with no repechage is 9
+    const r16 = f.contests.filter((b) => b.id_weight === '1' && b.round_name === 'Round of 16')
+      .map(loserOf).filter((id) => !fightsOf(f.contests.filter((b) => b.id_weight === '1'), id).some((b) => b.round_name === 'Repechage'));
+    expect(r16.length).toBeGreaterThan(0);
+    for (const id of r16) expect(at(Number(id), '-60').place).toBe(9);
   });
 
   it('3177: gender comes from the person, not the (wrong) category gender', () => {
