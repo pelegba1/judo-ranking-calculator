@@ -10,6 +10,19 @@ import { decayDates } from './dates';
 export { categoryKey } from './rules/categories';
 export type { OfficialPlace } from './rules/domestic';
 
+/**
+ * The period (100% / 50% / expired) of a result on `rankingDate`, from its competition as stored (not as seen by
+ * the view), with the dates shown for it. The world ranking decays by competition anniversary (WRL_DECAY); the
+ * Olympic ranking splits its qualification window into two years instead (rules/la28.ts).
+ */
+export type DecayRule = (competition: CompetitionMeta, rankingDate: string) => { period: Period; half: string; expire: string };
+
+/** World ranking decay: 100% for a year, 50% in the second year, then expired (spec 5.1). */
+export const WRL_DECAY: DecayRule = (competition, rankingDate) => {
+  const { half, expire } = decayDates(competition);
+  return { period: periodOf(rankingDate, half, expire), half, expire };
+};
+
 export interface ScoredResult {
   result: AthleteResult;
   /** The competition as seen by the ranking view (a junior WC in the senior view has eventType 'junior_world_ch'). */
@@ -23,7 +36,8 @@ export interface ScoredResult {
 }
 
 /**
- * Score every result that enters the `view` ranking: base points, domestic rule, decay, and which results count.
+ * Score every result that enters the `view` ranking: base points, domestic rule, decay (`decay`, by default the
+ * world ranking's), and which results count.
  * Results in unfinished categories are dropped, as are results carried in from another age group whose weight
  * has no category in `view`. Output keeps the input order.
  * All results of a competition must be supplied together: the domestic rule ranks the host athletes against
@@ -31,7 +45,7 @@ export interface ScoredResult {
  */
 export function scoreResults(
   results: AthleteResult[], comps: Map<number, CompetitionMeta>, rankingDate: string,
-  view: AgeGroup, officialPlace: OfficialPlace,
+  view: AgeGroup, officialPlace: OfficialPlace, decay: DecayRule = WRL_DECAY,
 ): ScoredResult[] {
   const entering: { r: AthleteResult; original: CompetitionMeta; meta: CompetitionMeta }[] = [];
   for (const r of results) {
@@ -49,8 +63,7 @@ export function scoreResults(
     .filter(({ r, original }) => resultHasViewCategory(r, original.age, view))
     .map(({ r, original, meta }) => {
       const base = basePoints(meta.age, meta.eventType, r.place, r.wins, original.dateFrom);
-      const { half, expire } = decayDates(original);
-      const period = periodOf(rankingDate, half, expire);
+      const { period, half, expire } = decay(original, rankingDate);
       const value = excluded.has(r) ? 0 : base * PERIOD_FACTOR[period];
       return { result: r, meta, base, period, value, counted: false, halfDate: half, expireDate: expire };
     });

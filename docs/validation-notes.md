@@ -76,3 +76,21 @@ the 1/16-1/64 column when the table has one, else wins × per-contest value; no 
 - **Junior/cadet 2026 continental cups:** about a quarter of participation rows show 0 (e.g. cont_cup_jun_kaz2026)
   with no visible difference from those that get 2.
 - 45 persons have no continent (their country never appears in a results payload's top places).
+
+## Olympic ranking (LA28), first measured 2026-11-14
+
+How the Olympic points are counted: `docs/research/olympic-points.md`. The nightly run asks
+`competitor.wrl_current` for the best 40 of each senior category and the best 40 of each continent and gender by
+engine Olympic points (653 athletes, about 60-120 s), dates that list by the best engine match (its Olympic fields
+lag: the 2026-10-12 list on 2026-11-14) and writes `olympic-official.json` plus `validation.json` → `olympic`.
+
+| Check | Result |
+|---|---|
+| Engine Olympic totals vs `ogq_sum_points` (list 2026-10-12) | 625/631 = 99.05% |
+| Engine vs the ijf.org Olympic page (top 24 per gender, list 2026-11-02) | 48/48 |
+| Computed status vs `q_status` (allocation on the official points) | 618/619 = 99.84%: direct 238/238, NOC-blocked 73/73, continental 69/69, host 12/12, out 226/227 |
+
+- The 6 total mismatches are the WRL gaps above (participation points, the 102884 person merge).
+- The one status disagreement: 73963 (NIG, -63, 45 points) computed continental, official out; not explained.
+- 12 asked athletes have codes the allocation does not produce (5 "returned quota", 11/12/17/18); they are left out
+  of the status check. An athlete ranked in two categories has a status only in one (official: the other is null).

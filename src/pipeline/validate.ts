@@ -5,6 +5,7 @@ import type { OfficialPlace } from '../engine/rules/domestic';
 import type { AgeGroup, AthleteResult, CategoryKey, CompetitionMeta } from '../engine/types';
 import { AGE_GENDERS, splitAgeGender, type AgeGender } from '../data/ids';
 import { addDays, mondayOnOrBefore } from './util';
+import type { OlympicValidation } from './olympic';
 
 export const MAX_MISMATCHES = 200;
 
@@ -12,7 +13,7 @@ export interface Mismatch { idPerson: number; category: CategoryKey; official: n
 export interface AgeValidation { checked: number; matched: number; mismatches: Mismatch[] }
 export type Validation = Record<AgeGroup, AgeValidation>;
 /** validation.json: per-age results plus the run's warnings (lists kept from the previous run, distrusted dates). */
-export type ValidationFile = Validation & { warnings: string[] };
+export type ValidationFile = Validation & { olympic?: OlympicValidation; warnings: string[] };
 
 const AGES: AgeGroup[] = ['sen', 'jun', 'cad'];
 

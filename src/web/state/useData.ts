@@ -6,6 +6,7 @@ import { loadCompetition, toCompetitionMeta } from '../../data/competition-loade
 import type { OfficialEntry } from '../../engine/projection';
 import type { AgeGroup, AthleteResult, CompetitionMeta, Person } from '../../engine/types';
 import type { AgeGender } from '../../data/ids';
+import type { OlympicOfficialFile, OlympicValidation } from '../../pipeline/olympic';
 
 export interface MetaFile {
   generatedAt: string;
@@ -13,7 +14,7 @@ export interface MetaFile {
   competitions: (CompetitionMeta & { hasResults: boolean })[];
 }
 export interface AgeValidation { checked: number; matched: number; mismatches: unknown[] }
-export type ValidationFile = Record<AgeGroup, AgeValidation> & { warnings: string[] };
+export type ValidationFile = Record<AgeGroup, AgeValidation> & { olympic?: OlympicValidation; warnings: string[] };
 export interface AgeFiles { official: OfficialEntry[]; results: Record<string, AthleteResult[]> }
 
 export type Status = 'loading' | 'ready' | 'error';
@@ -40,6 +41,7 @@ class DataStore {
   persons: Loadable<Map<number, Person>> = { status: 'loading' };
   private livePersons: Person[] = [];
   ages: Partial<Record<AgeGroup, Loadable<AgeFiles>>> = {};
+  olympic: Loadable<OlympicOfficialFile> | undefined;
   live = new Map<number, LiveState>();
   /** Bumped whenever a live result set arrives (projection inputs depend on it, not on loading states). */
   liveVersion = 0;
@@ -88,6 +90,10 @@ class DataStore {
   retry() {
     if (this.core.status === 'error') this.loadCore();
     if (this.persons.status === 'error') this.loadPersons();
+    if (this.olympic?.status === 'error') {
+      this.olympic = undefined;
+      this.ensureOlympic();
+    }
     for (const age of Object.keys(this.ages) as AgeGroup[]) {
       if (this.ages[age]?.status === 'error') {
         delete this.ages[age];
@@ -104,6 +110,16 @@ class DataStore {
     Promise.all([fetchJson<OfficialEntry[]>(`official-${age}.json`), fetchJson<Record<string, AthleteResult[]>>(`results-${age}.json`)])
       .then(([official, results]) => { this.ages[age] = { status: 'ready', value: { official, results } }; })
       .catch(() => { this.ages[age] = { status: 'error' }; })
+      .finally(() => this.emit());
+  }
+
+  /** Starts loading olympic-official.json, once. Safe to call during render (no emit). */
+  ensureOlympic() {
+    if (this.olympic) return;
+    this.olympic = { status: 'loading' };
+    fetchJson<OlympicOfficialFile>('olympic-official.json')
+      .then((value) => { this.olympic = { status: 'ready', value }; })
+      .catch(() => { this.olympic = { status: 'error' }; })
       .finally(() => this.emit());
   }
 
@@ -184,6 +200,9 @@ export interface DataView {
   official(age: AgeGroup): OfficialEntry[] | undefined;
   results(age: AgeGroup): Record<string, AthleteResult[]> | undefined;
   ageStatus(age: AgeGroup): Status;
+  /** Starts loading olympic-official.json on first call; undefined until it is in. */
+  olympicOfficial(): OlympicOfficialFile | undefined;
+  olympicStatus(): Status;
   live: ReadonlyMap<number, LiveState>;
   extra: ReadonlyMap<number, CompetitionMeta>;
   liveVersion: number;
@@ -209,6 +228,14 @@ export function useData(): DataView {
     ageStatus: (a) => {
       store.ensureAge(a);
       return store.ages[a]!.status;
+    },
+    olympicOfficial: () => {
+      store.ensureOlympic();
+      return store.olympic!.status === 'ready' ? store.olympic!.value : undefined;
+    },
+    olympicStatus: () => {
+      store.ensureOlympic();
+      return store.olympic!.status;
     },
     live: store.live,
     extra: store.extra,

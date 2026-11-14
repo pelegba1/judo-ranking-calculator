@@ -150,4 +150,7 @@ Page sample = 48 athletes (top 24 men + top 24 women, all 14 categories); API sa
   second counting implementation).
 - Official Olympic data for the site comes from `competitor.wrl_current` (all athletes, but lagging) with its own
   list date chosen by best engine match; the page's top 48 is used as a second check in `validation.json`.
-- Statuses compare against `q_status` (1 direct, 2 continental, 3 NOC-blocked, 4 host).
+- Statuses compare against `q_status` (1 direct, 2 continental, 3 NOC-blocked, 4 host). First nightly run
+  (2026-11-14, allocation on the official points of the 2026-10-12 list): 618/619 agree (99.84%; direct 238/238,
+  NOC-blocked 73/73, continental 69/69, host 12/12, out 226/227). Host-nation rule confirmed: every USA athlete is
+  status 4 and exactly 14 × 17 = 238 athletes are status 1, so USA athletes in a top 17 take no direct place.

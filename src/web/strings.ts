@@ -1,11 +1,26 @@
 // Every Hebrew UI string in one place.
 import type { AgeGroup, Gender } from '../engine/types';
+import type { Continent } from '../engine/rules/la28';
+import type { OlympicStatusKind } from '../engine/olympic';
 import { formatDate } from './format';
 
 export const AGE_LABEL: Record<AgeGroup, string> = { sen: 'בוגרים', jun: "ג'וניורים", cad: 'קדטים' };
 export const GENDER_LABEL: Record<Gender, string> = { m: 'גברים', f: 'נשים' };
 
 export { formatDate };
+
+/** Olympic quota statuses (spec 5.2). */
+export const STATUS_LABEL: Record<OlympicStatusKind | 'other', string> = {
+  direct: 'עלה ישירות',
+  continental: 'מכסה יבשתית',
+  host: 'מדינה מארחת',
+  noc_blocked: 'חסום — יש ספורטאי מאותה מדינה',
+  out: 'בחוץ',
+  other: 'סטטוס אחר',
+};
+export const CONTINENT_LABEL: Record<Continent, string> = {
+  Africa: 'אפריקה', Europe: 'אירופה', Asia: 'אסיה', Oceania: 'אוקיאניה', Americas: 'אמריקה',
+};
 
 export const S = {
   appTitle: "מחשבון דירוג ג'ודו",
@@ -113,4 +128,25 @@ export const S = {
   shareBannerCount: (n: number) => (n === 1 ? 'קיבלתם ספורטאי אחד ברשימת מעקב משותפת' : `קיבלתם ${n} ספורטאים ברשימת מעקב משותפת`),
   shareAdd: 'הוסף',
   shareDismiss: 'לא עכשיו',
+
+  navOlympic: 'אולימפי',
+  olympicTitle: 'דירוג אולימפי LA28',
+  olympicIntro: 'נקודות מתחרויות מ-15.6.2026 (השנה הראשונה של חלון הקוולפיקציה נספרת ב-50%). 17 הראשונים בכל קטגוריה עולים ישירות, עד ספורטאי אחד למדינה; אחר כך מכסות יבשתיות. ספורטאי ארה"ב — מדינה מארחת.',
+  olympicOfficialDate: (d: string) => `הרשימה האולימפית הרשמית: ${formatDate(d)}`,
+  olympicLoadError: 'לא הצלחנו לטעון את הנתונים האולימפיים.',
+  olympicPersonsLoading: 'טוען את רשימת הספורטאים…',
+  olympicNoEntries: 'אין ספורטאים עם נקודות אולימפיות בקטגוריה הזו.',
+  colStatus: 'סטטוס',
+  officialStatus: (label: string) => `רשמי: ${label}`,
+  officialStatusUnknown: 'סטטוס רשמי לא ידוע',
+  directLine: '17 המקומות הישירים — עד כאן',
+  continentalTitle: 'מכסות יבשתיות',
+  continentalFor: (gender: string) => `${gender} · ממוינים לפי נקודות`,
+  continentalCount: (got: number, quota: number) => `${got} מתוך ${quota}`,
+  continentalNone: 'אין עדיין ספורטאים במכסה',
+  continentalReallocated: 'מקום יבשתי שלא נוצל עובר לספורטאי הבא בדירוג מאותו מגדר מכל יבשת; ספורטאים כאלה מופיעים תחת היבשת שלהם, ולכן מספר הספורטאים ביבשת יכול לעלות על המכסה.',
+  noContinent: (n: number) => (n === 1 ? 'ספורטאי אחד בלי יבשת ידועה ("לא ידוע") לא נכלל ברשימות היבשתיות.' : `${n} ספורטאים בלי יבשת ידועה ("לא ידוע") לא נכללו ברשימות היבשתיות.`),
+  continentUnknownTag: 'יבשת: לא ידוע',
+  olympicValidation: (pct: string) => `התאמה לרשמי האולימפי: ${pct}%`,
+  olympicShort: 'אולימפי',
 };

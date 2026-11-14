@@ -20,6 +20,8 @@ export interface ScenarioHash {
   athlete?: number;
   /** The watch list screen (#/watch); age/gender/weight are then unused defaults. */
   watch?: boolean;
+  /** The Olympic ranking screen (#/olympic/m/-60): always seniors. */
+  olympic?: boolean;
   /** Athlete ids of a shared link (#/watch?ids=1,2): offered to the user, then dropped from the hash. */
   ids?: number[];
 }
@@ -77,7 +79,8 @@ export function parseHash(hash: string): ScenarioHash {
   const path = (q >= 0 ? h.slice(0, q) : h).split('/').filter(Boolean);
   const query = new URLSearchParams(q >= 0 ? h.slice(q + 1) : '');
 
-  const age = (AGES as string[]).includes(path[0]) ? (path[0] as AgeGroup) : DEFAULT_HASH.age;
+  const olympic = path[0] === 'olympic';
+  const age = (AGES as string[]).includes(path[0]) ? (path[0] as AgeGroup) : DEFAULT_HASH.age; // olympic: 'sen'
   const gender = (GENDERS as string[]).includes(path[1]) ? (path[1] as Gender) : DEFAULT_HASH.gender;
   let w = path[2] !== undefined ? decode(path[2]) : null;
   if (w && w.startsWith(' ')) w = `+${w.slice(1)}`; // a '+' read as a space
@@ -92,6 +95,7 @@ export function parseHash(hash: string): ScenarioHash {
   }
   const d = query.get('date') ?? '';
   const out: ScenarioHash = { age, gender, weight, added, date: isIsoDate(d) ? d : null };
+  if (olympic) return { ...out, olympic: true };
   if (path[0] === 'watch') {
     out.watch = true;
     const ids = decodeWatchlist(query.get('ids') ?? '');
@@ -112,6 +116,7 @@ export function formatHash(s: ScenarioHash): string {
   if (s.date) params.push(`date=${s.date}`);
   const query = params.length ? `?${params.join('&')}` : '';
   if (s.watch) return `#/watch${query}`;
+  if (s.olympic) return `#/olympic/${s.gender}/${encodeURIComponent(s.weight)}${query}`;
   return `#/${s.age}/${s.gender}/${encodeURIComponent(s.weight)}${s.athlete ? `/athlete/${s.athlete}` : ''}${query}`;
 }
 
@@ -139,8 +144,15 @@ export function withView(
     const c = comps.get(id);
     return !c || appliesTo(c, age);
   });
-  const { athlete: _athlete, watch: _watch, ids: _ids, ...rest } = h;
-  return { ...rest, age, gender, weight, added };
+  const { athlete: _athlete, watch: _watch, ids: _ids, olympic, ...rest } = h;
+  // the Olympic screen is senior only: another age group goes to that age group's table
+  return { ...rest, age, gender, weight, added, ...(olympic && age === 'sen' ? { olympic } : {}) };
+}
+
+/** The hash of the Olympic screen for the current view: seniors, same gender, the matching senior weight. */
+export function toOlympic(h: ScenarioHash, comps: Map<number, CompetitionMeta>): ScenarioHash {
+  const { olympic: _o, ...rest } = withView(h, { age: 'sen' }, comps);
+  return { ...rest, olympic: true };
 }
 
 export interface AddOutcome {
@@ -207,6 +219,30 @@ export function resolveScenario(
 }
 
 // ---------- projection ----------
+
+const mergeCache = new WeakMap<object, WeakMap<object, unknown>>();
+function merged<T extends object>(a: T, b: T, merge: () => T): T {
+  let m = mergeCache.get(a);
+  if (!m) mergeCache.set(a, (m = new WeakMap()));
+  let r = m.get(b) as T | undefined;
+  if (!r) m.set(b, (r = merge()));
+  return r;
+}
+
+/**
+ * The files a view draws on: its own age group's, plus the juniors' for seniors (junior world championships score
+ * in the senior ranking; junior places feed the domestic rule). Memoised by the loaded files, so every screen gets
+ * the same objects and the memoised projections are shared.
+ */
+export function viewFiles<O extends object, R extends object>(
+  age: AgeGroup, own: { official: O[]; results: R }, jun: { official: O[]; results: R },
+): { official: O[]; results: R } {
+  if (age !== 'sen') return own;
+  return {
+    official: merged(own.official, jun.official, () => [...own.official, ...jun.official]),
+    results: merged(own.results, jun.results, () => ({ ...jun.results, ...own.results })),
+  };
+}
 
 export interface ProjectionData {
   officialDates: Record<AgeGender, string>;

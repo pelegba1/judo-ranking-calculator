@@ -2,13 +2,14 @@ import { useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, use
 import { store, useData, type LiveState, type MetaFile, type ValidationFile } from './state/useData';
 import {
   AGES, GENDERS, addCompetitionToHash, appliesTo, buildProjection, competitionProgress, officialDateOf, pendingCompetitions,
-  formatHash, resolveScenario, useScenario, withView, type ProjectionData, type Scenario, type ScenarioHash,
+  formatHash, resolveScenario, toOlympic, useScenario, viewFiles, withView, type ProjectionData, type Scenario, type ScenarioHash,
 } from './state/useScenario';
 import { parseJudoTvUrl, resolveCompetition } from './judotv';
 import { AGE_LABEL, GENDER_LABEL, S, formatDate } from './strings';
 import { CategoryTable } from './screens/CategoryTable';
 import { AthleteBreakdown } from './screens/AthleteBreakdown';
 import { WatchList } from './screens/WatchList';
+import { Olympic } from './screens/Olympic';
 import { loadLastView, saveLastView } from './state/lastView';
 import { useWatchlist, type Watchlist } from './state/watchlist';
 import { WEIGHTS } from '../engine/rules/categories';
@@ -62,7 +63,7 @@ function Calculator({ meta, validation, hash, setHash, pushHash, watchlist }: {
 }) {
   const data = useData();
   const { age, gender, weight } = hash;
-  useEffect(() => { if (!hash.watch) saveLastView({ age, gender, weight }); }, [hash.watch, age, gender, weight]);
+  useEffect(() => { if (!hash.watch && !hash.olympic) saveLastView({ age, gender, weight }); }, [hash.watch, hash.olympic, age, gender, weight]);
   const extraSize = data.extra.size;
 
   const comps = useMemo(() => {
@@ -100,8 +101,11 @@ function Calculator({ meta, validation, hash, setHash, pushHash, watchlist }: {
   const ageStatus = age === 'sen' && data.ageStatus('jun') === 'error' ? 'error' : data.ageStatus(age);
   const ready = !!officialOwn && !!resultsOwn && (age !== 'sen' || (!!officialJun && !!resultsJun));
 
-  const official = useMemo(() => (officialOwn ? [...officialOwn, ...(officialJun ?? [])] : []), [officialOwn, officialJun]);
-  const results = useMemo(() => ({ ...(resultsJun ?? {}), ...(resultsOwn ?? {}) }), [resultsOwn, resultsJun]);
+  const files = ready
+    ? viewFiles(age, { official: officialOwn, results: resultsOwn }, { official: officialJun ?? [], results: resultsJun ?? {} })
+    : null;
+  const official = files?.official;
+  const results = files?.results;
   const live = useMemo(() => {
     const out: Record<string, AthleteResult[]> = {};
     for (const [id, s] of store.live) if (s.status === 'ready') out[id] = s.results;
@@ -109,13 +113,13 @@ function Calculator({ meta, validation, hash, setHash, pushHash, watchlist }: {
   }, [data.liveVersion]);
 
   const projectionData = useMemo<ProjectionData | null>(
-    () => (ready ? { officialDates: meta.officialDates, comps, official, results, live } : null),
-    [ready, meta.officialDates, comps, official, results, live],
+    () => (official && results ? { officialDates: meta.officialDates, comps, official, results, live } : null),
+    [meta.officialDates, comps, official, results, live],
   );
 
   if (hash.watch) {
     return (
-      <Shell header={<><StatusLine meta={meta} validation={validation} age={age} /><Nav hash={hash} count={watchlist.ids.length} /></>}>
+      <Shell header={<><StatusLine meta={meta} validation={validation} age={age} /><Nav hash={hash} comps={comps} count={watchlist.ids.length} /></>}>
         <section className="card" aria-labelledby="watch-title">
           <h2 id="watch-title">{S.watchTitle}</h2>
           <WatchList meta={meta} comps={comps} hash={hash} setHash={setHash} watchlist={watchlist} live={live} />
@@ -127,8 +131,42 @@ function Calculator({ meta, validation, hash, setHash, pushHash, watchlist }: {
   const nightlyOf = (c: Comp) => data.results(c.age)?.[c.id];
   const v = validation[age];
 
+  if (hash.olympic) {
+    const officialFile = data.olympicOfficial();
+    const olympicFailed = data.olympicStatus() === 'error' || data.personsStatus === 'error';
+    const ov = validation.olympic;
+    return (
+      <Shell header={<><StatusLine meta={meta} validation={validation} age={age} /><Nav hash={hash} comps={comps} count={watchlist.ids.length} /></>}>
+        <ViewPicker hash={hash} comps={comps} setHash={setHash} showAge={false} />
+        <AddCompetition meta={meta} comps={comps} hash={hash} setHash={setHash} />
+        <CompetitionList
+          meta={meta} comps={comps} hash={hash} setHash={setHash} live={data.live} nightlyOf={nightlyOf}
+        />
+        <TargetDate meta={meta} hash={hash} scenario={scenario} setHash={setHash} />
+        <section className="card" aria-labelledby="olympic-title">
+          <h2 id="olympic-title">
+            {S.olympicTitle} · {GENDER_LABEL[gender]} · <bdi dir="ltr">{weight}</bdi> {S.kg}
+          </h2>
+          {ageStatus === 'error' || olympicFailed ? (
+            <div className="state state-error" role="alert">
+              <p>{olympicFailed ? S.olympicLoadError : S.loadError}</p>
+              <button type="button" className="btn" onClick={() => store.retry()}>{S.retry}</button>
+            </div>
+          ) : !projectionData || !officialFile ? (
+            <p className="state">{S.ageLoading}</p>
+          ) : !data.persons ? (
+            <p className="state">{S.olympicPersonsLoading}</p>
+          ) : (
+            <Olympic data={projectionData} scenario={scenario} hash={hash} officialFile={officialFile} persons={data.persons} />
+          )}
+        </section>
+        {ov && ov.checked > 0 && <p className="footnote">{S.olympicValidation(pct(ov.matched, ov.checked))} · {S.gaps(ov.checked - ov.matched)}</p>}
+      </Shell>
+    );
+  }
+
   return (
-    <Shell header={<><StatusLine meta={meta} validation={validation} age={age} /><Nav hash={hash} count={watchlist.ids.length} /></>}>
+    <Shell header={<><StatusLine meta={meta} validation={validation} age={age} /><Nav hash={hash} comps={comps} count={watchlist.ids.length} /></>}>
       <ViewPicker hash={hash} comps={comps} setHash={setHash} />
       <AddCompetition meta={meta} comps={comps} hash={hash} setHash={setHash} />
       <CompetitionList
@@ -155,14 +193,16 @@ function Calculator({ meta, validation, hash, setHash, pushHash, watchlist }: {
   );
 }
 
-/** Table / watch list switch, keeping the scenario (added competitions, date) in the links. */
-function Nav({ hash, count }: { hash: ScenarioHash; count: number }) {
-  const { watch: _w, ids: _i, athlete: _a, ...rest } = hash;
+/** Table / Olympic / watch list switch, keeping the scenario (added competitions, date) in the links. */
+function Nav({ hash, comps, count }: { hash: ScenarioHash; comps: Map<number, Comp>; count: number }) {
+  const { watch: _w, ids: _i, athlete: _a, olympic: _o, ...rest } = hash;
   const table = hash.watch ? { ...rest, ...loadLastView() } : rest; // the watch route's hash holds only defaults
+  const on = hash.watch ? 'watch' : hash.olympic ? 'olympic' : 'table';
   return (
     <nav className="nav">
-      <a href={formatHash(table)} aria-current={hash.watch ? undefined : 'page'}>{S.navTable}</a>
-      <a href={formatHash({ ...hash, watch: true, ids: undefined })} aria-current={hash.watch ? 'page' : undefined}>{S.navWatch(count)}</a>
+      <a href={formatHash(table)} aria-current={on === 'table' ? 'page' : undefined}>{S.navTable}</a>
+      <a href={formatHash(toOlympic(table, comps))} aria-current={on === 'olympic' ? 'page' : undefined}>{S.navOlympic}</a>
+      <a href={formatHash({ ...rest, watch: true })} aria-current={on === 'watch' ? 'page' : undefined}>{S.navWatch(count)}</a>
     </nav>
   );
 }
@@ -192,15 +232,17 @@ function StatusLine({ meta, validation, age }: { meta: MetaFile; validation: Val
   );
 }
 
-function ViewPicker({ hash, comps, setHash }: {
-  hash: ScenarioHash; comps: Map<number, Comp>; setHash: (h: ScenarioHash) => void;
+function ViewPicker({ hash, comps, setHash, showAge = true }: {
+  hash: ScenarioHash; comps: Map<number, Comp>; setHash: (h: ScenarioHash) => void; showAge?: boolean;
 }) {
   return (
     <section className="card picker">
-      <Segmented
-        legend={S.ageLegend} name="age" value={hash.age} options={AGES.map((a) => [a, AGE_LABEL[a]])}
-        onChange={(a) => setHash(withView(hash, { age: a as AgeGroup }, comps))}
-      />
+      {showAge && (
+        <Segmented
+          legend={S.ageLegend} name="age" value={hash.age} options={AGES.map((a) => [a, AGE_LABEL[a]])}
+          onChange={(a) => setHash(withView(hash, { age: a as AgeGroup }, comps))}
+        />
+      )}
       <Segmented
         legend={S.genderLegend} name="gender" value={hash.gender} options={GENDERS.map((g) => [g, GENDER_LABEL[g]])}
         onChange={(g) => setHash(withView(hash, { gender: g as 'm' | 'f' }, comps))}

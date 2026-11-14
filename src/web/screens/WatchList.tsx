@@ -1,15 +1,16 @@
 import { useDeferredValue, useMemo, useState } from 'react';
 import { useData } from '../state/useData';
-import { AGES, buildProjection, formatHash, resolveScenario, type ProjectionData, type ScenarioHash } from '../state/useScenario';
+import { AGES, buildProjection, formatHash, resolveScenario, viewFiles, type ProjectionData, type ScenarioHash } from '../state/useScenario';
 import { encodeWatchlist, type Watchlist } from '../state/watchlist';
 import { formatMovement, formatPoints } from '../format';
-import { AGE_LABEL, GENDER_LABEL, S } from '../strings';
+import { AGE_LABEL, GENDER_LABEL, S, STATUS_LABEL } from '../strings';
+import { buildOlympicMemo, type OlympicRow, type OlympicView } from '../state/olympic';
 import { StarButton } from './StarButton';
 import type { AgeGroup, AthleteResult, CategoryKey, CompetitionMeta, Gender } from '../../engine/types';
 import type { OfficialEntry, ProjectedEntry } from '../../engine/projection';
 import type { MetaFile } from '../state/useData';
 
-interface Where { age: AgeGroup; gender: Gender; weight: string; entry: ProjectedEntry }
+interface Where { age: AgeGroup; gender: Gender; weight: string; entry: ProjectedEntry; olympic?: OlympicRow }
 
 interface Props {
   meta: MetaFile;
@@ -31,31 +32,37 @@ export function WatchList({ meta, comps, hash, setHash, watchlist, live }: Props
   const [o0, o1, o2] = files.map((f) => f.official);
   const [r0, r1, r2] = files.map((f) => f.results);
   const hasWatched = watchlist.ids.length > 0;
+  // Olympic place/status of senior entries: optional (the list shows without it while it loads or if it fails)
+  const olympicFile = data.olympicOfficial();
+  const persons = data.persons;
   // Per-age projections do not depend on who is watched (un-starring must not recompute them), and are heavy:
   // their inputs go through useDeferredValue like the table's, and the screen shows a busy state meanwhile.
   const input = useMemo(
-    () => ({ loadedAll: loadedAll && hasWatched, o: [o0, o1, o2], r: [r0, r1, r2], meta, comps, live, added: hash.added, date: hash.date }),
+    () => ({ loadedAll: loadedAll && hasWatched, o: [o0, o1, o2], r: [r0, r1, r2], meta, comps, live, added: hash.added, date: hash.date, olympicFile, persons }),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- hash.added/date are the scenario inputs
-    [loadedAll, hasWatched, o0, o1, o2, r0, r1, r2, meta, comps, live, hash.added, hash.date],
+    [loadedAll, hasWatched, o0, o1, o2, r0, r1, r2, meta, comps, live, hash.added, hash.date, olympicFile, persons],
   );
   const deferred = useDeferredValue(input);
   const stale = deferred !== input;
-  const projections = useMemo(() => {
+  const { projections, olympic } = useMemo(() => {
     const out = new Map<AgeGroup, Map<CategoryKey, ProjectedEntry[]>>();
-    if (!deferred.loadedAll) return out;
+    let olympic: OlympicView | null = null;
+    if (!deferred.loadedAll) return { projections: out, olympic };
     const official: Record<AgeGroup, OfficialEntry[]> = { sen: deferred.o[0]!, jun: deferred.o[1]!, cad: deferred.o[2]! };
     const results: Record<AgeGroup, Record<string, AthleteResult[]>> = { sen: deferred.r[0]!, jun: deferred.r[1]!, cad: deferred.r[2]! };
     for (const age of AGES) {
       const pd: ProjectionData = {
         officialDates: deferred.meta.officialDates, comps: deferred.comps, live: deferred.live,
         // seniors also draw on junior world championships
-        official: age === 'sen' ? [...official.sen, ...official.jun] : official[age],
-        results: age === 'sen' ? { ...results.jun, ...results.sen } : results[age],
+        ...viewFiles(age, { official: official[age], results: results[age] }, { official: official.jun, results: results.jun }),
       };
       const scenario = resolveScenario({ age, gender: 'm', weight: '', added: deferred.added, date: deferred.date }, deferred.comps, deferred.meta.officialDates);
       out.set(age, buildProjection(pd, scenario));
+      if (age === 'sen' && deferred.olympicFile && deferred.persons) {
+        olympic = buildOlympicMemo(pd, deferred.olympicFile, deferred.persons, scenario); // shared with the Olympic screen
+      }
     }
-    return out;
+    return { projections: out, olympic };
   }, [deferred]);
   // cheap second step: pick the watched athletes out of the projections
   const places = useMemo(() => {
@@ -67,13 +74,14 @@ export function WatchList({ meta, comps, hash, setHash, watchlist, live }: Props
           if (!wanted.has(entry.idPerson)) continue;
           const gender = cat[4] as Gender;
           const list = out.get(entry.idPerson) ?? [];
-          list.push({ age, gender, weight: cat.slice(5), entry });
+          const o = age === 'sen' ? olympic?.byCategory.get(cat)?.find((r) => r.idPerson === entry.idPerson) : undefined;
+          list.push({ age, gender, weight: cat.slice(5), entry, olympic: o });
           out.set(entry.idPerson, list);
         }
       }
     }
     return out;
-  }, [projections, watchlist.ids]);
+  }, [projections, olympic, watchlist.ids]);
 
   return (
     <div>
@@ -133,8 +141,13 @@ function WatchRow({ id, where, hash, watchlist }: { id: number; where: Where[] |
                 <span className="muted small">
                   {person?.country && <><bdi dir="ltr">{person.country}</bdi> · </>}{AGE_LABEL[w.age]} · {GENDER_LABEL[w.gender]} · <bdi dir="ltr">{w.weight}</bdi> {S.kg}
                 </span>
+                {w.olympic && (
+                  <span className="watch-oly">
+                    <span className="muted small">{S.olympicShort}: <bdi dir="ltr">{w.olympic.projectedPlace}</bdi></span>
+                    <span className={`ochip ochip-${w.olympic.status.kind}`}>{STATUS_LABEL[w.olympic.status.kind]}</span>
+                  </span>
+                )}
               </span>
-              {/* Task 12: Olympic place/status goes here */}
               <span className="watch-fig">
                 <span>
                   <bdi dir="ltr">{w.entry.projectedPlace}</bdi>{' '}

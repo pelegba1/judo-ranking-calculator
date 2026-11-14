@@ -3,8 +3,9 @@
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
-  getCompetitionInfo, getCompetitionList, getOfficialRanking, getWrlHistory, type RawRankingRow,
+  getCompetitionInfo, getCompetitionList, getOfficialRanking, getWrlCurrent, getWrlHistory, type RawRankingRow,
 } from '../data/ijf-api';
+import { OLYMPIC_PAGE_URL } from '../data/olympic-page';
 import { loadCompetition } from '../data/competition-loader';
 import { PLACINGS_VERSION } from '../engine/placings';
 import { AGE_GENDERS, ID_AGE, type AgeGender } from '../data/ids';
@@ -16,6 +17,7 @@ import {
   chooseOfficialDates, engineAtDates, officialPlaceLookup, summarise, validate, type Validation, type ValidationFile,
 } from './validate';
 import { daysBetween, mapLimit, mondayOnOrBefore, readJson, withRetry, writeJson } from './util';
+import { olympicStep, type OlympicOfficialFile, type OlympicValidation } from './olympic';
 
 /** A stored competition ended fewer than this many days ago is refetched every run (late corrections). */
 export const RECENT_DAYS = 14;
@@ -41,6 +43,7 @@ export interface RunSummary {
   personsWithoutContinent: number;
   officialDates: Record<AgeGender, string>;
   validation: Validation;
+  olympic: OlympicValidation;
   /** Also written to validation.json: official lists kept from the previous run, distrusted dates, failed calls. */
   warnings: string[];
 }
@@ -58,6 +61,12 @@ const finishedCount = (rs: AthleteResult[]) => rs.filter((r) => r.categoryFinish
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 const sortResults = (rs: AthleteResult[]) =>
   [...rs].sort((a, b) => cmp(a.gender, b.gender) || cmp(a.weight, b.weight) || a.place - b.place || a.idPerson - b.idPerson);
+
+async function fetchText(url: string): Promise<string> {
+  const res = await fetch(url, { redirect: 'follow' });
+  if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
+  return res.text();
+}
 
 async function fetchBreakdownHtml(idPerson: number): Promise<string> {
   const res = await fetch(`https://www.ijf.org/judoka/${idPerson}/wrl`, { redirect: 'follow' });
@@ -196,7 +205,15 @@ export async function runPipeline(opts: RunOptions): Promise<RunSummary> {
   const report = validate(official, officialDates, engine);
   const { validation } = report;
 
-  // 5. write
+  // 5. Olympic ranking (LA28): official Olympic points, their list date, engine and status agreement
+  const olympic = await olympicStep({
+    results: allResults, comps, officialPlace: officialPlaceLookup(official), persons, today,
+    previous: await readJson<OlympicOfficialFile>(join(opts.outDir, 'olympic-official.json')),
+    wrlCurrent: (id) => getWrlCurrent(id), pageHtml: (g) => fetchText(OLYMPIC_PAGE_URL[g]), retryDelayMs: delay, log,
+  });
+  warnings.push(...olympic.warnings);
+
+  // 6. write
   const meta: MetaFile = {
     generatedAt: (opts.now ?? new Date()).toISOString(),
     officialDates,
@@ -208,7 +225,8 @@ export async function runPipeline(opts: RunOptions): Promise<RunSummary> {
     await writeJson(join(opts.outDir, `official-${age}.json`), official.filter((o: OfficialEntry) => o.category.startsWith(`${age}-`)));
   }
   await writeJson(join(opts.outDir, 'persons.json'), Object.fromEntries([...persons].sort((a, b) => a[0] - b[0])));
-  const validationFile: ValidationFile = { ...validation, warnings };
+  await writeJson(join(opts.outDir, 'olympic-official.json'), olympic.file);
+  const validationFile: ValidationFile = { ...validation, olympic: olympic.validation, warnings };
   await writeJson(join(opts.outDir, 'validation.json'), validationFile);
 
   const competitions = Object.fromEntries(AGES.map((a) => [a, metas.filter((m) => m.age === a).length])) as Record<AgeGroup, number>;
@@ -218,7 +236,7 @@ export async function runPipeline(opts: RunOptions): Promise<RunSummary> {
   log(`persons: ${persons.size}, without continent: ${personsWithoutContinent}`);
   for (const line of summarise(report)) log(`validation ${line}`);
   for (const w of warnings) log(`WARNING ${w}`);
-  return { competitions, loaded, kept, failed, personsWithoutContinent, officialDates, validation, warnings };
+  return { competitions, loaded, kept, failed, personsWithoutContinent, officialDates, validation, olympic: olympic.validation, warnings };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

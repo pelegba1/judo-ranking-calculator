@@ -249,6 +249,45 @@ a.watch-link:hover { background: var(--surface-2); }
 .down { color: var(--down); }
 .is-stale { opacity: 0.6; transition: opacity 0.15s; }
 
+/* Olympic ranking */
+.otable { display: flex; flex-direction: column; margin-top: 8px; }
+.orow {
+  display: grid; grid-template-columns: 2.8em minmax(0, 1fr) 4em; gap: 6px; align-items: center;
+  min-height: var(--tap); padding: 6px 4px; border-bottom: 1px solid var(--border);
+  color: inherit; text-decoration: none; -webkit-tap-highlight-color: transparent;
+  content-visibility: auto; contain-intrinsic-size: auto 64px;
+}
+a.orow:hover { background: var(--surface-2); }
+.ohead {
+  position: sticky; top: 0; z-index: 2; background: var(--surface); content-visibility: visible;
+  font-size: 0.72rem; color: var(--muted); min-height: 36px; border-bottom-width: 2px;
+}
+.orow .c-place { display: flex; flex-direction: column; align-items: center; gap: 1px; }
+.orow.ostatus-direct, .orow.ostatus-host { box-shadow: inset 3px 0 0 var(--up); }
+.orow.ostatus-continental { box-shadow: inset 3px 0 0 var(--accent); }
+.o-meta { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; }
+.oline {
+  margin: 0; padding: 4px; border-top: 2px dashed var(--muted); border-bottom: 1px solid var(--border);
+  color: var(--muted); font-size: 0.78rem; text-align: center;
+}
+.ochip {
+  display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 0.76rem; font-weight: 600;
+  line-height: 1.5; background: var(--surface-2); color: var(--muted);
+}
+.ochip-direct { background: var(--ok-bg); color: var(--ok-text); }
+.ochip-continental { background: var(--accent-soft); color: var(--accent); }
+.ochip-host { background: var(--ok-bg); color: var(--ok-text); border: 1px dashed currentColor; }
+.ochip-noc_blocked { background: var(--warn-bg); color: var(--warn-text); }
+.continental { margin-top: 18px; }
+.continental h3 { margin: 0 0 2px; font-size: 1rem; }
+.cont-block { margin-top: 10px; border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; }
+.cont-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.cont-list { margin: 6px 0 0; padding-inline-start: 22px; display: flex; flex-direction: column; gap: 4px; }
+.cont-list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
+.cont-name { font-weight: 600; direction: ltr; overflow-wrap: anywhere; }
+.cont-points { margin-inline-start: auto; font-weight: 600; font-variant-numeric: tabular-nums; }
+.watch-oly { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; }
+
 @media (min-width: 560px) {
   .app { padding-inline: 20px; }
   .weight-grid { grid-template-columns: repeat(8, 1fr); }

@@ -1,5 +1,5 @@
 import type { AgeGroup, AthleteResult, CategoryKey, CompetitionMeta } from './types';
-import { scoreResults, type OfficialPlace, type ScoredResult } from './scoring';
+import { scoreResults, type DecayRule, type OfficialPlace, type ScoredResult } from './scoring';
 import { categoryKey } from './rules/categories';
 import { compareTied } from './rules/counting';
 
@@ -12,15 +12,15 @@ export interface RankingEntry {
 }
 
 /**
- * The `view` world ranking on `rankingDate`, per category. Athletes with 0 points (and categories left empty) are left out.
+ * The `view` world ranking on `rankingDate`, per category (`decay`: see scoreResults; default the world ranking's). Athletes with 0 points (and categories left empty) are left out.
  * Order: points, then the view's tie-breaks, then idPerson ascending.
  */
 export function computeRanking(
   results: AthleteResult[], comps: Map<number, CompetitionMeta>, rankingDate: string,
-  view: AgeGroup, officialPlace: OfficialPlace,
+  view: AgeGroup, officialPlace: OfficialPlace, decay?: DecayRule,
 ): Map<CategoryKey, RankingEntry[]> {
   const byCategory = new Map<CategoryKey, Map<number, ScoredResult[]>>();
-  for (const s of scoreResults(results, comps, rankingDate, view, officialPlace)) {
+  for (const s of scoreResults(results, comps, rankingDate, view, officialPlace, decay)) {
     const cat = categoryKey(view, s.result);
     let athletes = byCategory.get(cat);
     if (!athletes) byCategory.set(cat, (athletes = new Map()));
