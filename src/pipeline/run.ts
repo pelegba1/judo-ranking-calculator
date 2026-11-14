@@ -24,6 +24,8 @@ export const RECENT_DAYS = 14;
 /** Competitions loaded in parallel; each load makes 3 API calls, so at most 6 requests are in flight. */
 const LOAD_CONCURRENCY = 2;
 const INFO_CONCURRENCY = 6;
+/** Per page fetch (the IJF API calls have their own 30 s timeout). */
+const FETCH_TIMEOUT_MS = 30_000;
 const AGES: AgeGroup[] = ['sen', 'jun', 'cad'];
 
 export interface RunOptions {
@@ -63,13 +65,13 @@ const sortResults = (rs: AthleteResult[]) =>
   [...rs].sort((a, b) => cmp(a.gender, b.gender) || cmp(a.weight, b.weight) || a.place - b.place || a.idPerson - b.idPerson);
 
 async function fetchText(url: string): Promise<string> {
-  const res = await fetch(url, { redirect: 'follow' });
+  const res = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
   if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
   return res.text();
 }
 
 async function fetchBreakdownHtml(idPerson: number): Promise<string> {
-  const res = await fetch(`https://www.ijf.org/judoka/${idPerson}/wrl`, { redirect: 'follow' });
+  const res = await fetch(`https://www.ijf.org/judoka/${idPerson}/wrl`, { redirect: 'follow', signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
   if (!res.ok) throw new Error(`breakdown ${idPerson}: HTTP ${res.status}`);
   return res.text();
 }
