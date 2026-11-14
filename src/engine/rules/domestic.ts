@@ -8,16 +8,21 @@ export interface DomesticQuota { per: 'category' | 'gender'; n: number; }
 
 const PER_CATEGORY_2: DomesticQuota = { per: 'category', n: 2 };
 
-/** Domestic rule (spec 5.1), keyed by the competition's own age group and event type. */
+/**
+ * Domestic rule (spec 5.1), keyed by the competition's own age group and event type. Senior world championships:
+ * 9 host athletes per gender score (not in the spec; official breakdowns of wc_sen2026, host AZE: the 8 medal/5th
+ * men and the best-ranked 9th scored, the other three 9ths got "1/16 0"; wc_sen2025 fits too).
+ */
 export const DOMESTIC_QUOTA: Record<AgeGroup, Partial<Record<EventType, DomesticQuota>>> = {
-  sen: { grand_slam: PER_CATEGORY_2, grand_prix: PER_CATEGORY_2 },
+  sen: { grand_slam: PER_CATEGORY_2, grand_prix: PER_CATEGORY_2, world_ch: { per: 'gender', n: 9 } },
   jun: { grand_prix: PER_CATEGORY_2, world_ch: { per: 'gender', n: 9 } },
   cad: { grand_prix: PER_CATEGORY_2, world_ch: { per: 'gender', n: 10 } },
 };
 
 /**
- * Host-country results beyond the domestic quota (they score 0). Best = lower place, then better official place
- * in the competition's own age category (undefined = worst), then lower idPerson.
+ * Host-country results beyond the domestic quota (they score 0). Best = won at least one contest (checked against
+ * official breakdowns, Task 7: a 9th without a win is passed over by a 9th with one), then lower place, then better
+ * official place in the competition's own age category (undefined = worst), then lower idPerson.
  * `results` must hold every result of each competition, or the quota is applied to a partial field.
  */
 export function domesticExcluded(
@@ -37,8 +42,9 @@ export function domesticExcluded(
   const excluded = new Set<AthleteResult>();
   for (const { quota, meta, hosts } of groups.values()) {
     const official = (r: AthleteResult) => officialPlace(r.idPerson, categoryKey(meta.age, r)) ?? Infinity;
+    const won = (r: AthleteResult) => (r.wins > 0 ? 1 : 0);
     hosts
-      .sort((a, b) => a.place - b.place || official(a) - official(b) || a.idPerson - b.idPerson)
+      .sort((a, b) => won(b) - won(a) || a.place - b.place || official(a) - official(b) || a.idPerson - b.idPerson)
       .slice(quota.n)
       .forEach((r) => excluded.add(r));
   }

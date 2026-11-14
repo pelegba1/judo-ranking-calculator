@@ -16,8 +16,7 @@ const SENIOR: Record<EventType, number[] | undefined> = {
 
 // Junior/cadet table, SOR 2026 sections 3.2.2 / 3.2.3 (identical for both), extracted with pdftotext -table.
 // Columns: 1 / 2 / 3 / 5 / 7 / 1-16 / 1-32 / 1-64 / each-contest-won / participation. null = empty cell.
-// UNVERIFIED pre-2026 jun/cad: results dated before 2026-01-01 should use the SOR 2025 table; not found, so
-// the 2026 table is reused (see JUN_CAD_PRE2026). Task 7 validation will expose the gap.
+// Results dated before 2026-01-01 keep the SOR 2025 values (JUN_CAD_PRE2026).
 type JRow = (number | null)[];
 const JUN_CAD_2026: Partial<Record<EventType, JRow>> = {
   continental_cup: [100, 70, 50, 40, 30, null, null, null, 6, 2],
@@ -25,7 +24,27 @@ const JUN_CAD_2026: Partial<Record<EventType, JRow>> = {
   grand_prix: [400, 280, 200, 160, 120, 64, 48, 40, 24, 6],
   world_ch: [700, 490, 350, 280, 210, 112, 84, 70, 42, 6],
 };
-const JUN_CAD_PRE2026 = JUN_CAD_2026; // UNVERIFIED pre-2026 jun/cad
+/**
+ * Pre-2026 junior/cadet values, read off official breakdown pages (Task 7, full value = shown points / percent;
+ * juniors and cadets agree): continental cup 100/60/40/20/16, 2 per contest won, no participation points;
+ * continental championship 200/120/80/40/32, 6 per contest won, participation 2; world championship 1st 500,
+ * 2nd 300, 7th 80, 12 per contest won (9th is "fights won": no 1/16 column), participation 4.
+ * UNVERIFIED: world championship 3rd 200 and 5th 100 (no page seen; the 5x-continental-cup pattern of 1st/2nd/7th),
+ * and the grand prix row (no pre-2026 junior/cadet grand prix in the data window: 2026 values kept).
+ */
+const JUN_CAD_PRE2026: Partial<Record<EventType, JRow>> = {
+  continental_cup: [100, 60, 40, 20, 16, null, null, null, 2, 0],
+  continental_ch: [200, 120, 80, 40, 32, null, null, null, 6, 2],
+  grand_prix: JUN_CAD_2026.grand_prix,
+  world_ch: [500, 300, 200, 100, 80, null, null, null, 12, 4],
+};
+
+/**
+ * Senior events whose participation column applies only from a date on. Continental opens before 2025 gave no
+ * participation points (official breakdowns: no participation rows for the Nov 2024 opens, "7. place 0" without a
+ * win; participation 2 from cont_open_mar2025, Jan 2025 on).
+ */
+const SENIOR_PARTICIPATION_FROM: Partial<Record<EventType, string>> = { continental_open: '2025-01-01' };
 
 const SENIOR_IDX: Partial<Record<Place, number>> = { 1: 0, 2: 1, 3: 2, 5: 3, 7: 4, 9: 5, 17: 6 };
 const JUN_IDX: Partial<Record<Place, number>> = { 1: 0, 2: 1, 3: 2, 5: 3, 7: 4, 9: 5, 17: 6, 33: 7 };
@@ -41,7 +60,7 @@ export function basePoints(age: AgeGroup, event: EventType, place: Place, wins: 
   if (age === 'sen') {
     const row = SENIOR[event];
     if (!row) return 0;
-    if (wins <= 0) return row[8];
+    if (wins <= 0) return eventDate < (SENIOR_PARTICIPATION_FROM[event] ?? '') ? 0 : row[8];
     const i = SENIOR_IDX[place];
     return i === undefined ? row[7] : row[i];
   }

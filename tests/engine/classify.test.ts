@@ -24,10 +24,15 @@ describe('classifyCompetition', () => {
     ['gp_cad_ger2026', 'cad', 'grand_prix'],
     ['cont_cup_jun_pol2026', 'jun', 'continental_cup'],
     ['oly2028', 'sen', 'olympic_games'],
+    ['oly_2024', 'sen', 'olympic_games'],
+    ['cont_open_1_aus2025', 'sen', 'continental_open'],
+    // Gold Coast Oceania Open 2025 scored with Grand Prix values (official breakdowns: 1st 700, 3rd 350, 5th 252)
+    ['cont_open_2_aus2025', 'sen', 'grand_prix'],
   ])('%s', (code, age, eventType) => {
     expect(c(code)).toEqual({ age, eventType });
   });
   it.each(['cont_cup_sen_esp2026', 'itc_jpn2026', 'jua_games2026', 'sea_tha2025', 'sag_arg2026',
-    'cg_gbr2026', 'eju_ss2025', 'kata_esp2026', 'eju_nw_lat2026', 'wcup_ibsa_geo2025', 'pjc_cag2025'])(
+    'cg_gbr2026', 'eju_ss2025', 'kata_esp2026', 'eju_nw_lat2026', 'wcup_ibsa_geo2025', 'pjc_cag2025',
+    'oly_teams2024', 'yog_sen2026', 'wc_sen_teams2026', 'wc_vet2025', 'gs_deaf_sui2026', 'gs_adapted_sui2026'])(
     'null for %s', (code) => expect(c(code)).toBeNull());
 });

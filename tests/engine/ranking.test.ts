@@ -134,6 +134,37 @@ describe('domestic rule', () => {
     expect(scored.filter((s) => s.value > 0).map((s) => s.result.idPerson).sort()).toEqual([2, 3]);
   });
 
+  it('a host with a win goes before an equally placed host without one, whatever their official places', () => {
+    // Evidence (Task 7): gs_mgl2025 -60, MGL hosts 3rd + three 9ths; the 9th without a win (official #31) got
+    // "participation 0", a 9th with a win (#204) got "1/16 80 (50%)".
+    const gs = comp('grand_slam', '2025-07-25', 'sen', 'MGL');
+    const results = [
+      res(gs, 25494, 3, { country: 'MGL', wins: 4 }), res(gs, 27365, 9, { country: 'MGL', wins: 0 }),
+      res(gs, 47891, 9, { country: 'MGL', wins: 1 }),
+    ];
+    const official = (id: number) => ({ 25494: 19, 27365: 31, 47891: 204 } as Record<number, number>)[id];
+    const scored = scoreResults(results, mapOf([gs]), '2025-11-03', 'sen', official);
+    expect(scored.filter((s) => s.value > 0).map((s) => s.result.idPerson).sort()).toEqual([25494, 47891]);
+    expect(scored.find((s) => s.result.idPerson === 27365)!.value).toBe(0);
+  });
+
+  it('senior world ch: only the 9 best host men score, across categories (wc_sen2026 AZE, official breakdowns)', () => {
+    // AZE men: 1st, 2nd, 2nd, 3rd x4, 5th all scored; of the 9ths with a win only 20144 (official #1) scored,
+    // 13028 (#19), 51107 (#46) and 25741 (#15) got "1/16 0".
+    const wc = comp('world_ch', '2026-10-04', 'sen', 'AZE');
+    const top = [[29091, 1], [51301, 2], [13278, 2], [30188, 3], [60560, 3], [20741, 3], [64022, 3], [70960, 5]] as const;
+    const ninths = [[20144, 1], [25741, 15], [13028, 19], [51107, 46]] as const;
+    const results = [
+      ...top.map(([id, place]) => res(wc, id, place, { country: 'AZE', wins: 4 })),
+      ...ninths.map(([id]) => res(wc, id, 9, { country: 'AZE', wins: 2 })),
+      res(wc, 999, 9, { country: 'ISR', wins: 1 }),
+    ];
+    const official = (id: number) => Object.fromEntries(ninths)[id] as number | undefined;
+    const scored = scoreResults(results, mapOf([wc]), '2026-11-09', 'sen', official);
+    expect(scored.filter((s) => s.value === 0).map((s) => s.result.idPerson).sort()).toEqual([13028, 25741, 51107]);
+    expect(scored.find((s) => s.result.idPerson === 20144)!.value).toBe(320);
+  });
+
   it('applies per category: 2 hosts in each of two categories all score', () => {
     const gs = comp('grand_slam', '2026-10-29', 'sen', 'UAE');
     const results = [
@@ -235,7 +266,7 @@ describe('junior/cadet counting', () => {
     const results = [res(wcCur, 1, 1), res(wcPrev, 1, 1), res(gpPrev, 1, 1)];
     const e = computeRanking(results, mapOf([wcCur, wcPrev, gpPrev]), '2026-10-26', 'jun', noOfficial)
       .get('jun-m-60')![0];
-    expect(e.points).toBe(700 + 350 + 200);
+    expect(e.points).toBe(700 + 250 + 200); // wcPrev uses the pre-2026 table (500), gpPrev keeps 2026 values (400)
   });
 });
 

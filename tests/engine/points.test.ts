@@ -31,6 +31,15 @@ describe('senior points', () => {
     expect(basePoints('sen', 'junior_world_ch', 3, 3, D)).toBe(350);
     expect(basePoints('sen', 'continental_open', 3, 2, D)).toBe(50);
   });
+  it('continental opens before 2025 give no participation points (official breakdowns, Task 7)', () => {
+    // cont_open_can2024 / cont_open_sen2024 (Nov 2024): placed rows listed at 50%, no participation rows;
+    // cont_open_hkg2024 7th place without a win: "7. place 0 (50%)"; cont_open_mar2025 (Jan 2025): participation 2
+    expect(basePoints('sen', 'continental_open', 9, 0, '2024-11-16')).toBe(0);
+    expect(basePoints('sen', 'continental_open', 7, 0, '2024-11-09')).toBe(0);
+    expect(basePoints('sen', 'continental_open', 7, 1, '2024-11-09')).toBe(26);
+    expect(basePoints('sen', 'continental_open', 9, 0, '2025-01-18')).toBe(2);
+    expect(basePoints('sen', 'grand_slam', 9, 0, '2024-12-06')).toBe(10);
+  });
   it('zero wins gives participation regardless of place', () => {
     expect(basePoints('sen', 'grand_slam', 33, 0, D)).toBe(10);
     expect(basePoints('sen', 'world_ch', 33, 0, D)).toBe(20);
@@ -71,7 +80,25 @@ describe('junior/cadet 2026 points', () => {
       });
     }
   }
-  it('pre-2026 date currently reuses 2026 table', () => {
-    expect(basePoints('cad', 'world_ch', 1, 5, '2025-06-01')).toBe(700);
+  it('pre-2026 table, read off official breakdown pages (Task 7; full = shown points / percent)', () => {
+    const pre = '2025-06-01';
+    for (const age of ['jun', 'cad'] as const) {
+      // continental cup: 100/60/40/20/16, 2 per contest won below 7th, no participation points
+      expect([1, 2, 3, 5, 7].map((p) => basePoints(age, 'continental_cup', p as Place, 2, pre))).toEqual([100, 60, 40, 20, 16]);
+      expect(basePoints(age, 'continental_cup', 9, 3, pre)).toBe(6);
+      expect(basePoints(age, 'continental_cup', 17, 1, pre)).toBe(2);
+      expect(basePoints(age, 'continental_cup', 33, 0, pre)).toBe(0);
+      // continental championship: 200/120/80/40/32, 6 per contest won, participation 2
+      expect([1, 2, 3, 5, 7].map((p) => basePoints(age, 'continental_ch', p as Place, 2, pre))).toEqual([200, 120, 80, 40, 32]);
+      expect(basePoints(age, 'continental_ch', 9, 2, pre)).toBe(12);
+      expect(basePoints(age, 'continental_ch', 9, 0, pre)).toBe(2);
+      // world championship: 1st 500, 2nd 300, 7th 80, 12 per contest won (no 1/16 column), participation 4
+      expect(basePoints(age, 'world_ch', 1, 6, pre)).toBe(500);
+      expect(basePoints(age, 'world_ch', 2, 4, pre)).toBe(300);
+      expect(basePoints(age, 'world_ch', 7, 2, pre)).toBe(80);
+      expect(basePoints(age, 'world_ch', 9, 2, pre)).toBe(24);
+      expect(basePoints(age, 'world_ch', 17, 0, pre)).toBe(4);
+    }
+    expect(basePoints('cad', 'world_ch', 1, 5, '2026-01-01')).toBe(700);
   });
 });
