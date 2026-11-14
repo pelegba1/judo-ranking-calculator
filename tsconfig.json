@@ -11,7 +11,7 @@
     "esModuleInterop": true,
     "isolatedModules": true,
     "resolveJsonModule": true,
-    "types": ["node"]
+    "types": ["node", "vite/client"]
   },
   "include": ["src", "tests", "scripts"]
 }
