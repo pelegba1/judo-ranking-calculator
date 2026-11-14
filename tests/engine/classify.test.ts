@@ -14,6 +14,7 @@ describe('classifyCompetition', () => {
     ['jua_sen2025', 'sen', 'continental_ch'],
     ['oju_sen2026', 'sen', 'continental_ch'],
     ['pjc_oju_sen2025', 'sen', 'continental_ch'],
+    ['pjc_sen2026', 'sen', 'continental_ch'],
     ['cont_cup_cad_aze2026', 'cad', 'continental_cup'],
     ['eju_cad2026', 'cad', 'continental_ch'],
     ['oju_cad2026', 'cad', 'continental_ch'],
