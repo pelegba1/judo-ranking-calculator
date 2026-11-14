@@ -35,23 +35,45 @@ function isoFromText(text: string): string {
   return `${m[3]}-${String(mi + 1).padStart(2, '0')}-${m[2].padStart(2, '0')}`;
 }
 
-/** Competition name -> externalId from the Nuxt devalue payload (flat array with index refs). */
-function externalIds(html: string): Map<string, string> {
-  const out = new Map<string, string>();
+interface PayloadEntry {
+  points: number;
+  place: string;
+  name: string;
+  code: string;
+}
+
+/**
+ * Ranking entries ({points, place, competition:{name, externalId}}) from the Nuxt
+ * devalue payload (flat array with index refs).
+ */
+function payloadEntries(html: string): PayloadEntry[] {
   const m = /<script[^>]*id="__NUXT_DATA__"[^>]*>([\s\S]*?)<\/script>/.exec(html);
-  if (!m) return out;
+  if (!m) throw new Error('Breakdown page: __NUXT_DATA__ payload missing');
   let arr: unknown[];
   try {
     arr = JSON.parse(m[1]) as unknown[];
-  } catch {
-    return out;
+  } catch (e) {
+    throw new Error(`Breakdown page: payload not parseable (${e instanceof Error ? e.message : e})`);
   }
+  if (!Array.isArray(arr)) throw new Error('Breakdown page: payload is not an array');
+  const isObj = (v: unknown): v is Record<string, number> =>
+    !!v && typeof v === 'object' && !Array.isArray(v);
+  const out: PayloadEntry[] = [];
   for (const v of arr) {
-    if (v && typeof v === 'object' && !Array.isArray(v) && 'externalId' in v && 'name' in v) {
-      const o = v as Record<string, number>;
-      const name = arr[o.name];
-      const code = arr[o.externalId];
-      if (typeof name === 'string' && typeof code === 'string' && !out.has(name)) out.set(name, code);
+    if (!isObj(v) || !('points' in v) || !('place' in v) || !('competition' in v)) continue;
+    const comp = arr[v.competition];
+    if (!isObj(comp) || !('externalId' in comp) || !('name' in comp)) continue;
+    const points = arr[v.points];
+    const place = arr[v.place];
+    const name = arr[comp.name];
+    const code = arr[comp.externalId];
+    if (
+      typeof points === 'number' &&
+      typeof place === 'string' &&
+      typeof name === 'string' &&
+      typeof code === 'string'
+    ) {
+      out.push({ points, place, name, code });
     }
   }
   return out;
@@ -60,7 +82,6 @@ function externalIds(html: string): Map<string, string> {
 const AGES: Record<string, AgeGroup> = { Seniors: 'sen', Juniors: 'jun', Cadets: 'cad' };
 
 export function parseBreakdownPage(html: string): BreakdownPage {
-  const codes = externalIds(html);
   const body = html
     .replace(/<style[\s\S]*?<\/style>/g, '')
     .replace(/<script[\s\S]*?<\/script>/g, '');
@@ -83,10 +104,28 @@ export function parseBreakdownPage(html: string): BreakdownPage {
       date: isoFromText(m[1]),
       placeLabel: decode(m[2].trim()),
       competitionName,
-      competitionCode: codes.get(competitionName) ?? null,
+      competitionCode: null,
       points: Number(m[4]),
       percent,
     });
+  }
+  if (rows.length === 0) throw new Error('Breakdown page: no rows parsed (markup changed?)');
+
+  // The payload also holds other ranking entries, so match each row on
+  // (name, points, place); distinct codes for one key means we cannot tell, so fail.
+  const entries = payloadEntries(html);
+  for (const r of rows) {
+    const codes = new Set(
+      entries
+        .filter((e) => e.name === r.competitionName && e.points === r.points && e.place === r.placeLabel)
+        .map((e) => e.code),
+    );
+    if (codes.size !== 1) {
+      throw new Error(
+        `Breakdown page: ${codes.size} candidate codes for "${r.competitionName}" (${r.placeLabel}, ${r.points})`,
+      );
+    }
+    r.competitionCode = [...codes][0];
   }
   return { rankedOn, age: AGES[ageM[1]], rows };
 }
