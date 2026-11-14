@@ -41,7 +41,7 @@ describe('project', () => {
   it('athlete absent from official but engine-before 50 is unverified', () => {
     const out = project([off(1, 1, 5000)], rank(re(1, 5000, 1), re(9, 50, 2)), rank(re(1, 5000, 1), re(9, 50, 2)));
     expect(get(out, 9).verified).toBe(false);
-    expect(get(out, 9).projectedPoints).toBe(50);
+    expect(get(out, 9).projectedPoints).toBe(0); // official 0 + delta 0
   });
 
   it('official athlete absent from both before and after is kept', () => {
@@ -61,7 +61,7 @@ describe('project', () => {
   });
 
   it('category only in after is output', () => {
-    const k: CategoryKey = 'sen-w-48';
+    const k: CategoryKey = 'sen-f-48';
     const after = new Map<CategoryKey, RankingEntry[]>([[k, [{ idPerson: 5, category: k, points: 10, place: 1, results: [] }]]]);
     expect(project([], new Map(), after).get(k)![0].projectedPlace).toBe(1);
   });
