@@ -149,4 +149,22 @@ export const S = {
   continentUnknownTag: 'יבשת: לא ידוע',
   olympicValidation: (pct: string) => `התאמה לרשמי האולימפי: ${pct}%`,
   olympicShort: 'אולימפי',
+
+  navSearch: 'חיפוש',
+  searchTitle: 'חיפוש ספורטאים',
+  searchLabel: 'שם ספורטאי',
+  searchPlaceholder: 'שם ספורטאי (באנגלית)',
+  searchHint: 'הקלידו שם ספורטאי, או בחרו מדינה כדי לראות את כל הספורטאים שלה.',
+  searchTooShort: 'הקלידו לפחות שתי אותיות.',
+  searchNone: 'לא נמצאו ספורטאים.',
+  searchAllAges: 'הכל',
+  searchCount: (n: number) => (n === 1 ? 'נמצא ספורטאי אחד' : `נמצאו ${n.toLocaleString('he-IL')} ספורטאים`),
+  searchMore: (shown: number, n: number) => `מוצגים ${shown} מתוך ${n.toLocaleString('he-IL')} — צמצמו את החיפוש`,
+
+  countryLabel: 'מדינה',
+  countryAll: 'כל המדינות',
+  countryClear: 'נקה',
+  countryNone: (c: string) => `אין ספורטאים מ-${c} בקטגוריה הזו.`,
+  countryNoneContinental: (c: string) => `אין ספורטאים מ-${c} במכסות היבשתיות.`,
+  countryLoading: 'טוען את רשימת הספורטאים…',
 };

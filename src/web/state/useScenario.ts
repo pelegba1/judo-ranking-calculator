@@ -24,6 +24,14 @@ export interface ScenarioHash {
   olympic?: boolean;
   /** Athlete ids of a shared link (#/watch?ids=1,2): offered to the user, then dropped from the hash. */
   ids?: number[];
+  /** The athlete search screen (#/search?q=…); age/gender/weight are then unused defaults. */
+  search?: boolean;
+  /** Search text (search screen only). */
+  q?: string;
+  /** Age group filter of the search screen (absent = every age group). */
+  searchAge?: AgeGroup;
+  /** Country filter (IOC code, e.g. 'ISR') of the table, Olympic and search screens. */
+  country?: string;
 }
 /** The scenario the projection runs on. */
 export interface Scenario { age: AgeGroup; gender: Gender; weight: string; added: number[]; targetDate: string }
@@ -95,7 +103,17 @@ export function parseHash(hash: string): ScenarioHash {
   }
   const d = query.get('date') ?? '';
   const out: ScenarioHash = { age, gender, weight, added, date: isIsoDate(d) ? d : null };
+  const country = (query.get('country') ?? '').trim().toUpperCase();
+  if (/^[A-Z]{3}$/.test(country)) out.country = country;
   if (olympic) return { ...out, olympic: true };
+  if (path[0] === 'search') {
+    out.search = true;
+    const q = (query.get('q') ?? '').slice(0, 100);
+    if (q.trim()) out.q = q;
+    const a = query.get('age') ?? '';
+    if ((AGES as string[]).includes(a)) out.searchAge = a as AgeGroup;
+    return out;
+  }
   if (path[0] === 'watch') {
     out.watch = true;
     const ids = decodeWatchlist(query.get('ids') ?? '');
@@ -112,10 +130,14 @@ export function parseHash(hash: string): ScenarioHash {
 export function formatHash(s: ScenarioHash): string {
   const params: string[] = [];
   if (s.watch && s.ids?.length) params.push(`ids=${encodeWatchlist(s.ids)}`);
+  if (s.search && s.q) params.push(`q=${encodeURIComponent(s.q)}`);
+  if (s.search && s.searchAge) params.push(`age=${s.searchAge}`);
+  if (s.country) params.push(`country=${s.country}`);
   if (s.added.length) params.push(`add=${s.added.join(',')}`);
   if (s.date) params.push(`date=${s.date}`);
   const query = params.length ? `?${params.join('&')}` : '';
   if (s.watch) return `#/watch${query}`;
+  if (s.search) return `#/search${query}`;
   if (s.olympic) return `#/olympic/${s.gender}/${encodeURIComponent(s.weight)}${query}`;
   return `#/${s.age}/${s.gender}/${encodeURIComponent(s.weight)}${s.athlete ? `/athlete/${s.athlete}` : ''}${query}`;
 }
@@ -144,7 +166,7 @@ export function withView(
     const c = comps.get(id);
     return !c || appliesTo(c, age);
   });
-  const { athlete: _athlete, watch: _watch, ids: _ids, olympic, ...rest } = h;
+  const { athlete: _athlete, watch: _watch, ids: _ids, olympic, search: _search, q: _q, searchAge: _sa, ...rest } = h;
   // the Olympic screen is senior only: another age group goes to that age group's table
   return { ...rest, age, gender, weight, added, ...(olympic && age === 'sen' ? { olympic } : {}) };
 }

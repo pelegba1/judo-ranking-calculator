@@ -10,6 +10,9 @@ import { CategoryTable } from './screens/CategoryTable';
 import { AthleteBreakdown } from './screens/AthleteBreakdown';
 import { WatchList } from './screens/WatchList';
 import { Olympic } from './screens/Olympic';
+import { Search } from './screens/Search';
+import { CountryFilter } from './screens/CountryFilter';
+import { countriesOf } from './search';
 import { loadLastView, saveLastView } from './state/lastView';
 import { useWatchlist, type Watchlist } from './state/watchlist';
 import { WEIGHTS } from '../engine/rules/categories';
@@ -63,7 +66,7 @@ function Calculator({ meta, validation, hash, setHash, pushHash, watchlist }: {
 }) {
   const data = useData();
   const { age, gender, weight } = hash;
-  useEffect(() => { if (!hash.watch && !hash.olympic) saveLastView({ age, gender, weight }); }, [hash.watch, hash.olympic, age, gender, weight]);
+  useEffect(() => { if (!hash.watch && !hash.olympic && !hash.search) saveLastView({ age, gender, weight }); }, [hash.watch, hash.olympic, hash.search, age, gender, weight]);
   const extraSize = data.extra.size;
 
   const comps = useMemo(() => {
@@ -75,7 +78,7 @@ function Calculator({ meta, validation, hash, setHash, pushHash, watchlist }: {
 
   // A known competition in the hash that gives no points in this age group (hand-edited link): drop it.
   useEffect(() => {
-    if (hash.watch) return; // the watch list spans every age group
+    if (hash.watch || hash.search) return; // these screens span every age group
     const keep = hash.added.filter((id) => { const c = comps.get(id); return !c || appliesTo(c, age); });
     if (keep.length !== hash.added.length) setHash({ ...hash, added: keep });
   }, [hash, comps, age, setHash]);
@@ -128,6 +131,17 @@ function Calculator({ meta, validation, hash, setHash, pushHash, watchlist }: {
     );
   }
 
+  if (hash.search) {
+    return (
+      <Shell header={<><StatusLine meta={meta} validation={validation} age={age} /><Nav hash={hash} comps={comps} count={watchlist.ids.length} /></>}>
+        <section className="card" aria-labelledby="search-title">
+          <h2 id="search-title">{S.searchTitle}</h2>
+          <Search meta={meta} comps={comps} hash={hash} setHash={setHash} watchlist={watchlist} live={live} />
+        </section>
+      </Shell>
+    );
+  }
+
   const nightlyOf = (c: Comp) => data.results(c.age)?.[c.id];
   const v = validation[age];
 
@@ -157,7 +171,7 @@ function Calculator({ meta, validation, hash, setHash, pushHash, watchlist }: {
           ) : !data.persons ? (
             <p className="state">{S.olympicPersonsLoading}</p>
           ) : (
-            <Olympic data={projectionData} scenario={scenario} hash={hash} officialFile={officialFile} persons={data.persons} />
+            <Olympic data={projectionData} scenario={scenario} hash={hash} setHash={setHash} officialFile={officialFile} persons={data.persons} />
           )}
         </section>
         {ov && ov.checked > 0 && <p className="footnote">{S.olympicValidation(pct(ov.matched, ov.checked))} · {S.gaps(ov.checked - ov.matched)}</p>}
@@ -195,14 +209,16 @@ function Calculator({ meta, validation, hash, setHash, pushHash, watchlist }: {
 
 /** Table / Olympic / watch list switch, keeping the scenario (added competitions, date) in the links. */
 function Nav({ hash, comps, count }: { hash: ScenarioHash; comps: Map<number, Comp>; count: number }) {
-  const { watch: _w, ids: _i, athlete: _a, olympic: _o, ...rest } = hash;
-  const table = hash.watch ? { ...rest, ...loadLastView() } : rest; // the watch route's hash holds only defaults
-  const on = hash.watch ? 'watch' : hash.olympic ? 'olympic' : 'table';
+  const { watch: _w, ids: _i, athlete: _a, olympic: _o, search: _s, q: _q, ...rest } = hash;
+  // the watch and search routes' hashes hold only defaults for the view
+  const table = hash.watch || hash.search ? { ...rest, ...loadLastView() } : rest;
+  const on = hash.watch ? 'watch' : hash.search ? 'search' : hash.olympic ? 'olympic' : 'table';
   return (
     <nav className="nav">
       <a href={formatHash(table)} aria-current={on === 'table' ? 'page' : undefined}>{S.navTable}</a>
       <a href={formatHash(toOlympic(table, comps))} aria-current={on === 'olympic' ? 'page' : undefined}>{S.navOlympic}</a>
       <a href={formatHash({ ...rest, watch: true })} aria-current={on === 'watch' ? 'page' : undefined}>{S.navWatch(count)}</a>
+      <a href={formatHash({ ...rest, search: true })} aria-current={on === 'search' ? 'page' : undefined}>{S.navSearch}</a>
     </nav>
   );
 }
@@ -475,6 +491,12 @@ function ProjectionView({ data, scenario, persons, hash, setHash, pushHash, watc
   const cat = `${scenario.age}-${scenario.gender}${scenario.weight}` as CategoryKey;
   const entries: ProjectedEntry[] = projection.get(cat) ?? [];
   const added = useMemo(() => new Set(scenario.added), [scenario.added]);
+  const country = hash.country;
+  const countries = useMemo(() => countriesOf(entries.map((e) => e.idPerson), persons, country), [entries, persons, country]);
+  const shown = useMemo(
+    () => (country && persons ? entries.filter((e) => persons.get(e.idPerson)?.country === country) : entries),
+    [entries, persons, country],
+  );
 
   // Opening an athlete scrolls to the card; going back restores where the table was.
   const savedScroll = useRef(0);
@@ -507,11 +529,18 @@ function ProjectionView({ data, scenario, persons, hash, setHash, pushHash, watc
         />
       ) : (
         <>
+          <CountryFilter id="table-country" value={country} options={countries} onChange={(c) => setHash({ ...hash, country: c })} />
           <p className="muted small table-hint">{S.tableHint}{added.size > 0 && ` · ${S.highlightHint}`}</p>
+          {country && !persons ? (
+            <p className="state">{S.countryLoading}</p>
+          ) : country && shown.length === 0 ? (
+            <p className="muted">{S.countryNone(country)}</p>
+          ) : (
           <CategoryTable
-            entries={entries} persons={persons} added={added} onOpen={openAthlete} watched={watchlist.set} onToggleStar={watchlist.toggle}
+            entries={shown} persons={persons} added={added} onOpen={openAthlete} watched={watchlist.set} onToggleStar={watchlist.toggle}
             hrefOf={(id) => formatHash({ ...hash, athlete: id })}
           />
+          )}
         </>
       )}
     </div>

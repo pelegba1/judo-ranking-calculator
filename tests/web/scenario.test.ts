@@ -263,3 +263,42 @@ describe('athlete route in the hash', () => {
     expect(withView(h, { gender: 'f' }, new Map()).athlete).toBeUndefined();
   });
 });
+
+describe('search route and country filter in the hash', () => {
+  it('parses and formats #/search?q=…&country=ISR', () => {
+    const h = parseHash('#/search?q=smith%20jo&country=isr&add=3159');
+    expect(h.search).toBe(true);
+    expect(h.q).toBe('smith jo');
+    expect(h.country).toBe('ISR');
+    expect(h.added).toEqual([3159]);
+    expect(formatHash(h)).toBe('#/search?q=smith%20jo&country=ISR&add=3159');
+  });
+  it('keeps the search age filter, and drops a bad one', () => {
+    const h = parseHash('#/search?q=ab&age=jun');
+    expect(h.searchAge).toBe('jun');
+    expect(formatHash(h)).toBe('#/search?q=ab&age=jun');
+    expect(parseHash('#/search?age=xx').searchAge).toBeUndefined();
+    expect(parseHash('#/sen/m/-60?age=jun').searchAge).toBeUndefined();
+  });
+  it('an empty search is just #/search', () => {
+    expect(formatHash(parseHash('#/search?q=%20%20'))).toBe('#/search');
+  });
+  it('keeps the country filter on the table, Olympic and athlete routes', () => {
+    expect(formatHash(parseHash('#/jun/f/-48?country=ISR'))).toBe('#/jun/f/-48?country=ISR');
+    expect(formatHash(parseHash('#/olympic/m/-73?country=JPN'))).toBe('#/olympic/m/-73?country=JPN');
+    expect(parseHash('#/sen/m/-60/athlete/7?country=ISR')).toMatchObject({ athlete: 7, country: 'ISR' });
+  });
+  it('drops a malformed country', () => {
+    for (const bad of ['IS', 'ISRA', '1SR', '']) expect(parseHash(`#/sen/m/-60?country=${bad}`).country).toBeUndefined();
+  });
+  it('q only lives on the search route', () => {
+    expect(parseHash('#/sen/m/-60?q=abc').q).toBeUndefined();
+    expect(formatHash({ age: 'sen', gender: 'm', weight: '-60', added: [], date: null, q: 'abc' })).toBe('#/sen/m/-60');
+  });
+  it('switching the view leaves the search screen but keeps the country', () => {
+    const h = withView(parseHash('#/search?q=abc&country=ISR'), { gender: 'f' }, new Map());
+    expect(h.search).toBeUndefined();
+    expect(h.q).toBeUndefined();
+    expect(h.country).toBe('ISR');
+  });
+});

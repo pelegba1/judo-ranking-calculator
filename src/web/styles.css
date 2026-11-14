@@ -199,9 +199,9 @@ a.crow:active { background: var(--accent-soft); }
 .chead .c-points { align-items: flex-end; }
 
 /* nav + watch list */
-.nav { display: flex; gap: 6px; margin-top: 10px; }
+.nav { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .nav a {
-  display: inline-flex; align-items: center; min-height: var(--tap); padding: 0 14px; border-radius: 10px;
+  display: inline-flex; align-items: center; min-height: var(--tap); padding: 0 12px; border-radius: 10px;
   background: var(--surface-2); color: inherit; text-decoration: none; font-weight: 600;
 }
 .nav a[aria-current="page"] { background: var(--accent); color: var(--on-accent); }
@@ -292,4 +292,19 @@ a.orow:hover { background: var(--surface-2); }
   .app { padding-inline: 20px; }
   .weight-grid { grid-template-columns: repeat(8, 1fr); }
   .top h1 { font-size: 1.6rem; }
+}
+
+/* search + country filter */
+.search-bar { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+.search-bar input {
+  width: 100%; min-height: var(--tap); padding: 0 12px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--bg); color: inherit; font: inherit;
+}
+.search-bar input::placeholder { color: var(--muted); direction: rtl; text-align: right; }
+.country-filter { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.search-bar .country-filter { margin-bottom: 0; }
+.country-filter label { font-weight: 600; font-size: 0.92rem; }
+.country-filter select {
+  min-height: var(--tap); min-width: 9rem; padding: 0 10px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--bg); color: inherit; font: inherit;
 }

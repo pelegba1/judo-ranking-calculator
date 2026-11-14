@@ -7,17 +7,20 @@ import { formatHash, type ProjectionData, type Scenario, type ScenarioHash } fro
 import { formatDelta, formatMovement, formatPoints } from '../format';
 import { CONTINENT_LABEL, GENDER_LABEL, S, STATUS_LABEL } from '../strings';
 import { HOST, continentOf } from '../../engine/rules/la28';
+import { countriesOf } from '../search';
+import { CountryFilter } from './CountryFilter';
 
 interface Props {
   data: ProjectionData;
   scenario: Scenario;
   hash: ScenarioHash;
+  setHash: (h: ScenarioHash) => void;
   officialFile: OlympicOfficialFile;
   persons: Map<number, Person>;
 }
 
 /** The projected Olympic ranking of one senior category with quota statuses, and the continental places. */
-export function Olympic({ data, scenario, hash, officialFile, persons }: Props) {
+export function Olympic({ data, scenario, hash, setHash, officialFile, persons }: Props) {
   const key = `${scenario.added.join(',')}|${scenario.targetDate}`;
   // gender/weight changes reuse the computation (it covers every category)
   const input = useMemo(() => ({ data, scenario, officialFile, persons, key }), [data, officialFile, persons, key]);
@@ -28,18 +31,22 @@ export function Olympic({ data, scenario, hash, officialFile, persons }: Props) 
   );
   const stale = deferred !== input;
   const cat = `sen-${scenario.gender}${scenario.weight}` as CategoryKey;
-  const rows = view.byCategory.get(cat) ?? [];
+  const all = view.byCategory.get(cat) ?? [];
+  const country = hash.country;
+  const countries = useMemo(() => countriesOf(all.map((r) => r.idPerson), persons, country), [all, persons, country]);
+  const rows = country ? all.filter((r) => persons.get(r.idPerson)?.country === country) : all;
 
   return (
     <div className={stale ? 'is-stale' : undefined} aria-busy={stale}>
       <p className="muted small">{S.olympicIntro}</p>
       <p className="muted small">{S.olympicOfficialDate(view.officialDate)}</p>
+      <CountryFilter id="olympic-country" value={country} options={countries} onChange={(c) => setHash({ ...hash, country: c })} />
       {rows.length === 0 ? (
-        <p className="muted">{S.olympicNoEntries}</p>
+        <p className="muted">{country ? S.countryNone(country) : S.olympicNoEntries}</p>
       ) : (
         <OlympicTable rows={rows} persons={persons} hash={hash} />
       )}
-      <Continental view={view} gender={scenario.gender} persons={persons} />
+      <Continental view={view} gender={scenario.gender} persons={persons} country={country} />
     </div>
   );
 }
@@ -95,18 +102,25 @@ function OlympicTable({ rows, persons, hash }: { rows: OlympicRow[]; persons: Ma
   );
 }
 
-function Continental({ view, gender, persons }: { view: OlympicView; gender: Gender; persons: Map<number, Person> }) {
+function Continental({ view, gender, persons, country }: {
+  view: OlympicView; gender: Gender; persons: Map<number, Person>; country: string | undefined;
+}) {
   return (
     <section className="continental" aria-labelledby="continental-title">
       <h3 id="continental-title">{S.continentalTitle}</h3>
       <p className="muted small">{S.continentalFor(GENDER_LABEL[gender])}</p>
+      {country && !view.continental.some((c) => c.qualified[gender].some((r) => persons.get(r.idPerson)?.country === country)) && (
+        <p className="muted small">{S.countryNoneContinental(country)}</p>
+      )}
       {view.continental.map((c) => {
-        const list = c.qualified[gender];
+        const qualified = c.qualified[gender];
+        const list = country ? qualified.filter((r) => persons.get(r.idPerson)?.country === country) : qualified;
+        if (country && list.length === 0) return null; // filtered: only the continents with that country's athletes
         return (
           <div key={c.continent} className="cont-block">
             <div className="cont-head">
               <strong>{CONTINENT_LABEL[c.continent]}</strong>
-              <span className="muted small">{S.continentalCount(list.length, c.quota[gender])}</span>
+              <span className="muted small">{S.continentalCount(qualified.length, c.quota[gender])}</span>
             </div>
             {list.length === 0 ? (
               <p className="muted small">{S.continentalNone}</p>
