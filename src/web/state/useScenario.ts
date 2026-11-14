@@ -209,12 +209,17 @@ export function competitionProgress(results: AthleteResult[]): { finished: numbe
   return { finished: done.size, total: all.size };
 }
 
-/** The scenario the projection runs on: explicit date from the hash, else the default from the added competitions. */
+/**
+ * The scenario the projection runs on: explicit date from the hash, else the default from the added competitions.
+ * Never before the official date (an old bookmarked date would compute "after" before "before").
+ */
 export function resolveScenario(
   h: ScenarioHash, comps: Map<number, CompetitionMeta>, officialDates: Record<AgeGender, string>,
 ): Scenario & { dateIsAuto: boolean } {
   const added = h.added.map((id) => comps.get(id)).filter((c): c is CompetitionMeta => !!c && appliesTo(c, h.age));
-  const targetDate = h.date ?? defaultTargetDate(added, officialDates, h.age);
+  const targetDate = h.date === null
+    ? defaultTargetDate(added, officialDates, h.age)
+    : maxDate([h.date, officialDateOf(officialDates, h.age)]);
   return { age: h.age, gender: h.gender, weight: h.weight, added: h.added, targetDate, dateIsAuto: h.date === null };
 }
 

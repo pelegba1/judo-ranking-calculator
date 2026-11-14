@@ -78,6 +78,15 @@ describe('target date', () => {
     expect(resolveScenario({ ...base, date: '2026-12-07' }, comps, dates('2026-11-09')))
       .toMatchObject({ targetDate: '2026-12-07', dateIsAuto: false });
   });
+
+  it('resolveScenario never puts an explicit date before the official date (latest of the two genders)', () => {
+    const comps = new Map<number, CompetitionMeta>();
+    const base: ScenarioHash = { age: 'sen', gender: 'm', weight: '-60', added: [], date: '2026-10-05' };
+    expect(resolveScenario(base, comps, dates('2026-11-09'))).toMatchObject({ targetDate: '2026-11-09', dateIsAuto: false });
+    const od = { ...dates('2026-11-02'), 'sen-f': '2026-11-09' };
+    expect(resolveScenario({ ...base, date: '2026-11-03' }, comps, od).targetDate).toBe('2026-11-09');
+    expect(resolveScenario({ ...base, date: '2026-11-10' }, comps, od).targetDate).toBe('2026-11-10');
+  });
 });
 
 describe('pendingCompetitions', () => {
@@ -171,10 +180,12 @@ describe('buildProjection (fixtures)', () => {
   });
 
   it('live results take precedence over the nightly ones for an added competition', () => {
-    const live = { 3159: results['3159'].map((r) => ({ ...r, categoryFinished: r.gender === 'm' && r.weight === '-60' })) };
+    // a fresher live set (every category finished, not fewer than the nightly one): the store keeps it, see live.test.ts
+    const live = { 3159: results['3159'].map((r) => ({ ...r, categoryFinished: true })) };
     const without = buildProjection(data(dates('2026-11-09')), scenario([], '2026-11-16'));
     const withLive = buildProjection(data(dates('2026-11-09'), live), scenario([3159], '2026-11-16'));
-    expect([...changed(without, withLive)]).toEqual(['sen-m-60']);
+    expect([...changed(without, withLive)].sort()).toEqual([...all3159].sort());
+    expect(all3159.size).toBeGreaterThan(finished3159.size);
   });
 
   it('official dates are per gender: an added competition already in one gender\'s list changes only the other', () => {

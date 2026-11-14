@@ -66,6 +66,8 @@ export function buildOlympic(
   const inView = [...data.comps.values()].filter((c) => appliesTo(c, 'sen'));
   const asked = new Set(officialFile.entries.map((e) => e.idPerson));
   const statusOf = new Map(officialFile.entries.map((e) => [`${e.idPerson}|${e.category}`, e.status] as const));
+  // Listed by the IJF with no Olympic place: no official place to move from (shown as new, not as a drop from 0).
+  const unplaced = new Set(officialFile.entries.filter((e) => e.place === null).map((e) => `${e.idPerson}|${e.category}`));
 
   const projected = new Map<CategoryKey, ProjectedEntry[]>();
   for (const gender of GENDERS) {
@@ -85,7 +87,10 @@ export function buildOlympic(
     for (const [cat, entries] of project(official, before, after)) {
       if (!cat.startsWith(prefix)) continue;
       const kept = entries.filter((e) => e.projectedPoints > 0);
-      for (const e of kept) if (!asked.has(e.idPerson)) e.verified = false; // never checked against the IJF
+      for (const e of kept) {
+        if (!asked.has(e.idPerson)) e.verified = false; // never checked against the IJF
+        if (unplaced.has(`${e.idPerson}|${cat}`)) e.officialPlace = null;
+      }
       projected.set(cat, kept);
     }
   }

@@ -5,16 +5,12 @@ import { getCompetitionInfo } from '../../data/ijf-api';
 import { loadCompetition, toCompetitionMeta } from '../../data/competition-loader';
 import type { OfficialEntry } from '../../engine/projection';
 import type { AgeGroup, AthleteResult, CompetitionMeta, Person } from '../../engine/types';
-import type { AgeGender } from '../../data/ids';
-import type { OlympicOfficialFile, OlympicValidation } from '../../pipeline/olympic';
+import type { OlympicOfficialFile } from '../../pipeline/olympic';
+import type { MetaFile } from '../../pipeline/run';
+import type { ValidationFile } from '../../pipeline/validate';
 
-export interface MetaFile {
-  generatedAt: string;
-  officialDates: Record<AgeGender, string>;
-  competitions: (CompetitionMeta & { hasResults: boolean })[];
-}
-export interface AgeValidation { checked: number; matched: number; mismatches: unknown[] }
-export type ValidationFile = Record<AgeGroup, AgeValidation> & { olympic?: OlympicValidation; warnings: string[] };
+// The data files' shapes are the pipeline's (types only: no pipeline code reaches the web bundle).
+export type { MetaFile, ValidationFile };
 export interface AgeFiles { official: OfficialEntry[]; results: Record<string, AthleteResult[]> }
 
 export type Status = 'loading' | 'ready' | 'error';
@@ -25,7 +21,17 @@ export type LiveState =
   | { status: 'unknown' } // id not found / gives no points
   | { status: 'loading' }
   | { status: 'ready'; results: AthleteResult[] }
+  /** Loaded, but with fewer finished results than the nightly data (e.g. empty): the nightly results are used. */
+  | { status: 'fallback' }
   | { status: 'failed' };
+
+const finishedCount = (rs: AthleteResult[]) => rs.filter((r) => r.categoryFinished).length;
+
+/** A live result set that would lose results the nightly data has (empty, or fewer finished) is not used. */
+export function keepNightly(live: AthleteResult[], nightly: AthleteResult[] | undefined): boolean {
+  if (!nightly?.length) return false;
+  return live.length === 0 || finishedCount(live) < finishedCount(nightly);
+}
 
 /** Relative to the page (never a leading slash: the site lives under /judo-ranking-calculator/). */
 async function fetchJson<T>(name: string): Promise<T> {
@@ -34,15 +40,17 @@ async function fetchJson<T>(name: string): Promise<T> {
   return (await res.json()) as T;
 }
 
-class DataStore {
+export class DataStore {
   private version = 0;
   private listeners = new Set<() => void>();
   core: Loadable<{ meta: MetaFile; validation: ValidationFile }> = { status: 'loading' };
   persons: Loadable<Map<number, Person>> = { status: 'loading' };
   private livePersons: Person[] = [];
   ages: Partial<Record<AgeGroup, Loadable<AgeFiles>>> = {};
+  private agePromises = new Map<AgeGroup, Promise<void>>();
   olympic: Loadable<OlympicOfficialFile> | undefined;
   live = new Map<number, LiveState>();
+  private inflight = new Map<number, Promise<LiveState>>();
   /** Bumped whenever a live result set arrives (projection inputs depend on it, not on loading states). */
   liveVersion = 0;
   /** Competitions resolved live that meta.json does not list. */
@@ -107,10 +115,19 @@ class DataStore {
   ensureAge(age: AgeGroup) {
     if (this.ages[age]) return;
     this.ages[age] = { status: 'loading' };
-    Promise.all([fetchJson<OfficialEntry[]>(`official-${age}.json`), fetchJson<Record<string, AthleteResult[]>>(`results-${age}.json`)])
+    const p = Promise.all([fetchJson<OfficialEntry[]>(`official-${age}.json`), fetchJson<Record<string, AthleteResult[]>>(`results-${age}.json`)])
       .then(([official, results]) => { this.ages[age] = { status: 'ready', value: { official, results } }; })
       .catch(() => { this.ages[age] = { status: 'error' }; })
       .finally(() => this.emit());
+    this.agePromises.set(age, p);
+  }
+
+  /** The nightly results of a competition (waits for its age group's files); undefined if none or unavailable. */
+  private async nightlyOf(meta: CompetitionMeta): Promise<AthleteResult[] | undefined> {
+    this.ensureAge(meta.age);
+    await this.agePromises.get(meta.age);
+    const a = this.ages[meta.age];
+    return a?.status === 'ready' ? a.value.results[meta.id] : undefined;
   }
 
   /** Starts loading olympic-official.json, once. Safe to call during render (no emit). */
@@ -138,21 +155,34 @@ class DataStore {
     this.emit();
   }
 
-  /** Loads a competition live from the IJF API (call from effects/handlers). Never throws; the outcome goes to `live`. */
-  async loadLive(meta: CompetitionMeta): Promise<LiveState> {
-    const cur = this.live.get(meta.id);
-    if (cur?.status === 'loading') return cur;
+  /**
+   * Loads a competition live from the IJF API (call from effects/handlers). Never throws; the outcome goes to `live`.
+   * A call while a load of the same competition is in flight returns that load. A live set with fewer finished
+   * results than the nightly one (e.g. empty) is not used: the state is `fallback` and the nightly results stay.
+   */
+  loadLive(meta: CompetitionMeta): Promise<LiveState> {
+    const cur = this.inflight.get(meta.id);
+    if (cur) return cur;
+    const p = this.doLoadLive(meta).finally(() => this.inflight.delete(meta.id));
+    this.inflight.set(meta.id, p);
+    return p;
+  }
+
+  private async doLoadLive(meta: CompetitionMeta): Promise<LiveState> {
+    const wasReady = this.live.get(meta.id)?.status === 'ready';
     this.live.set(meta.id, { status: 'loading' });
     this.emit();
+    const nightly = this.nightlyOf(meta);
     let next: LiveState;
     try {
       const { results, persons } = await loadCompetition(meta);
       this.addPersons(persons);
-      next = { status: 'ready', results };
-      this.liveVersion++;
+      next = keepNightly(results, await nightly) ? { status: 'fallback' } : { status: 'ready', results };
     } catch {
       next = { status: 'failed' };
     }
+    // The projection's live inputs change when a result set arrives or a previous one is dropped.
+    if (next.status === 'ready' || wasReady) this.liveVersion++;
     this.live.set(meta.id, next);
     this.emit();
     return next;

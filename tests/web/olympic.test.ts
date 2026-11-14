@@ -80,4 +80,17 @@ describe('buildOlympic', () => {
     expect(buildOlympicMemo(data, file, persons, s)).toBe(buildOlympicMemo(data, file, persons, { ...s, gender: 'f' }));
     expect(buildOlympicMemo(data, file, persons, s)).not.toBe(buildOlympicMemo(data, file, persons, { ...s, added: [3] }));
   });
+
+  it('an athlete the official list has with no Olympic place keeps officialPlace null (shown as new, not ▼N)', () => {
+    const withUnplaced: OlympicOfficialFile = {
+      ...file,
+      entries: [...file.entries, { idPerson: 3, category: 'sen-m-60', points: 0, place: null, status: 'out', qStatus: 0 }],
+    };
+    const v = buildOlympic(data, withUnplaced, persons, { age: 'sen', gender: 'm', weight: '-60', added: [], targetDate: '2026-11-09' });
+    const row = v.byPerson.get(3)!;
+    expect(row.projectedPoints).toBe(360);
+    expect(row.verified).toBe(true); // asked: the IJF says 0 points, the engine agrees on 2026-09-14
+    expect(row.officialPlace).toBeNull();
+    expect(v.byPerson.get(1)!.officialPlace).toBe(1);
+  });
 });

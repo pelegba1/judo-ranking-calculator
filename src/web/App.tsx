@@ -328,10 +328,12 @@ function AddCompetition({ meta, comps, hash, setHash }: {
     if (add.next) setHash(add.next);
     setInput('');
     setNotice({ kind: 'info', text: messages.join(' · ') });
-    // Always fetch fresh (results may be partial); the nightly data is used meanwhile and if this fails.
+    // Always fetch fresh (results may be partial); the nightly data is used meanwhile and if this fails or comes back
+    // with less than it. A load already in flight (the background refresh) is awaited, not repeated.
     const known = latestComps.get(c.id);
     const s = await store.loadLive(known ?? c);
-    if (s.status === 'failed') {
+    if (s.status === 'fallback') setNotice({ kind: 'warn', text: S.liveFallback });
+    else if (s.status === 'failed') {
       setNotice(known?.hasResults
         ? { kind: 'warn', text: S.liveFallback }
         : { kind: 'error', text: `${c.name}: ${S.liveFailedNoData}` });
@@ -407,6 +409,7 @@ function CompetitionRow({ c, on, onToggle, live, nightly, viewAge }: {
   const dates = c.dateFrom === c.dateTo ? formatDate(c.dateTo) : `${formatDate(c.dateFrom)}–${formatDate(c.dateTo)}`;
   let liveNote: Notice | null = null;
   if (live?.status === 'loading') liveNote = { kind: 'info', text: S.liveLoading };
+  else if (live?.status === 'fallback') liveNote = { kind: 'warn', text: S.liveFallback };
   else if (live?.status === 'failed') liveNote = c.hasResults ? { kind: 'warn', text: S.liveFallback } : { kind: 'error', text: S.liveFailedNoData };
 
   return (
