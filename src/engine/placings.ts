@@ -4,6 +4,9 @@ import type {
   RawResultsResponse,
 } from '../data/ijf-api';
 import type { AthleteResult, CompetitionMeta, Gender, Place } from './types';
+import { competed, isWalkover, placeWhenNotPublished, scoredPublishedPlace } from './rules/participation';
+
+export { isWalkover };
 
 // Data findings: byes do not appear as bouts. A few competitions flag real bouts (both competitors, a winner) with
 // bye === '1' (cont_cup_jun_uzb2026: 14 bouts); the official ranking counts them as contests won, so the flag is
@@ -22,25 +25,6 @@ const VALID_PLACES: ReadonlySet<number> = new Set([1, 2, 3, 5, 7, 9, 17, 33, 65,
 
 const truthy = (v: unknown): boolean =>
   v === true || (v != null && v !== '' && v !== '0' && v !== 0 && v !== false);
-
-const SCORE_FIELDS = ['ippon_w', 'waza_w', 'yuko_w', 'penalty_w', 'ippon_b', 'waza_b', 'yuko_b', 'penalty_b'] as const;
-
-/**
- * A walkover (fusen-gachi): recorded as a finished bout of duration 00:00:00, without a hajime timestamp, whose
- * only score is the winner's single ippon. Real bouts with an unrecorded duration still have a hajime timestamp
- * (seen in cont_open_mar2025); bouts with missing scores or penalties are not walkovers.
- */
-export function isWalkover(b: RawContest): boolean {
-  if (!truthy(b.is_finished) || !b.id_winner || String(b.duration ?? '') !== '00:00:00') return false;
-  if (truthy(b.first_hajime_at_ts)) return false;
-  const winnerSide = b.id_winner === b.id_person_white ? 'w' : b.id_winner === b.id_person_blue ? 'b' : null;
-  if (!winnerSide) return false;
-  return SCORE_FIELDS.every((f) => {
-    const v = b[f];
-    if (v === null || v === undefined || v === '') return f.startsWith('yuko'); // yuko may be absent; others must be set
-    return Number(v) === (f === `ippon_${winnerSide}` ? 1 : 0);
-  });
-}
 
 function asPlace(v: unknown): Place | null {
   const n = Number(v);
@@ -178,26 +162,17 @@ export function derivePlacings(
         }
       }
 
-      // official results take precedence for places 1-7 (also covers pool formats, where 4th and 6th occur:
-      // they score as 5th and 7th)
+      // official results take precedence for places 1-7 (also covers pool formats; rules/participation.ts)
       const listed = c.resultPlace.has(id);
-      const rawPlace = c.resultPlace.get(id);
-      const rp = asPlace(rawPlace === 4 ? 5 : rawPlace === 6 ? 7 : rawPlace);
+      const rp = asPlace(scoredPublishedPlace(c.resultPlace.get(id)));
       if (rp !== null && rp <= 7) place = rp;
 
       if (categoryFinished && !listed) {
-        // Never competed (no bout, or only walkover losses = did not show up): no result at all. Official breakdowns
-        // list such athletes with 0 points or not at all.
-        if (!finished.some((b) => won(b) || !isWalkover(b))) continue;
-        // Places 1-7 are published in the results; an athlete missing there was not placed 5th/7th. This happens
-        // with a repechage from the last 16 (an early repechage loss is not 7th): the place is the main-bracket loss.
-        if (c.resultPlace.size > 0 && place !== null && place <= 7) {
-          place = 9;
-          for (const b of finished) {
-            const p = b.id_winner && !won(b) ? lossPlaceForRound(b.round_name) : null;
-            if (p && p > place) place = p;
-          }
-        }
+        if (!competed(finished, sid)) continue; // no-show: no result (rules/participation.ts)
+        const mainBracketLosses = finished
+          .map((b) => (b.id_winner && !won(b) ? lossPlaceForRound(b.round_name) : null))
+          .filter((p): p is Place => p !== null);
+        place = placeWhenNotPublished(place, c.resultPlace.size > 0, mainBracketLosses);
       }
       if (place === null) place = rp ?? (mine.length === 0 ? lowestPlace : 9);
 
